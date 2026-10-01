@@ -30,7 +30,7 @@ struct LoopStrapGauges: View {
             .accessibilityHint("Opens Find my strap")
             .sheet(isPresented: $showFindStrap) {
                 LoopFindStrapSheet(status: status)
-                    .presentationDetents([.medium])
+                    .presentationDetents([.medium, .large])
             }
         }
     }
@@ -103,6 +103,7 @@ struct LoopSyncGauge: View {
             case .cantFind: return "exclamationmark.arrow.triangle.2.circlepath"
             case .bluetoothOff: return "antenna.radiowaves.left.and.right.slash"
             case .noStrap: return "plus.circle"
+            case .needsPairing: return "exclamationmark.triangle"
             }
         }()
         let image = Image(systemName: symbol)
@@ -121,7 +122,7 @@ struct LoopSyncGauge: View {
         case .synced(let d): return Self.age(d, now: now)
         case .cantFind(let last?): return Self.age(last, now: now)
         // The icon says which; the words are in the pill under the ring and in VoiceOver.
-        case .cantFind(nil), .bluetoothOff, .noStrap: return "–"
+        case .cantFind(nil), .bluetoothOff, .noStrap, .needsPairing: return "–"
         }
     }
 
@@ -147,6 +148,7 @@ struct LoopSyncGauge: View {
         case .cantFind(nil): return "Not synced yet"
         case .bluetoothOff: return "Bluetooth is off"
         case .noStrap: return "No strap paired"
+        case .needsPairing: return "Your strap needs pairing again"
         }
     }
 }

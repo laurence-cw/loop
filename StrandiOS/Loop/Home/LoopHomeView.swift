@@ -108,7 +108,17 @@ struct LoopHomeView: View {
             }
             #endif
         }
-        .refreshable { model.ble.syncNow() }
+        // Pull down: ask for a sync through Noop's rate-limited foreground trigger (not the forced
+        // manual sync, which pauses a 4.0's live heart rate), or look for the strap when it isn't
+        // connected; then re-read what's stored, the way Noop's own Today refresh does.
+        .refreshable {
+            if live.connected && live.bonded {
+                model.ble.requestSync(.foreground)
+            } else if !status.isNeedsPairing {
+                model.scan()
+            }
+            await repo.refresh()
+        }
         .navigationDestination(isPresented: $openRecovery) { LoopRecoveryView(today: $today) }
         .navigationDestination(isPresented: $openSleep) { LoopSleepView(today: $today) }
         .navigationDestination(isPresented: $openActivity) { LoopActivityView(today: $today) }
@@ -116,7 +126,7 @@ struct LoopHomeView: View {
         .navigationDestination(isPresented: $openBreathe) { LoopBreatheView() }
         .sheet(isPresented: $showFindStrap) {
             LoopFindStrapSheet(status: status)
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large])
         }
     }
 
@@ -520,6 +530,8 @@ struct LoopStatusPill: View {
             Image(systemName: "plus.circle").font(.footnote).foregroundStyle(LoopColor.text)
         case .cantFind, .bluetoothOff:
             Image(systemName: "exclamationmark.circle").font(.footnote).foregroundStyle(LoopColor.text)
+        case .needsPairing:
+            Image(systemName: "exclamationmark.triangle").font(.footnote).foregroundStyle(LoopColor.text)
         }
     }
 }
@@ -549,7 +561,9 @@ struct LoopBluetoothCard: View {
     }
 }
 
-/// "Find my strap": one button plus three quick checks.
+/// "Find my strap": one button plus three quick checks. When Noop has stopped reconnecting and says
+/// why (the pairing was reset, or the strap refuses to pair), its own guide replaces the checks,
+/// because the checks wouldn't fix it.
 struct LoopFindStrapSheet: View {
     let status: LoopStatus
     @EnvironmentObject private var model: AppModel
@@ -567,17 +581,28 @@ struct LoopFindStrapSheet: View {
                         .foregroundStyle(LoopColor.muted)
                 }
             }
-            VStack(alignment: .leading, spacing: LoopSpace.s) {
-                check("battery.100percent", "Is it charged?")
-                check("antenna.radiowaves.left.and.right", "Is it nearby, on your wrist?")
-                check("dot.radiowaves.right", "Is Bluetooth on?")
+            if case .needsPairing(let guide) = status {
+                ScrollView {
+                    Text(guide)
+                        .font(LoopFont.body)
+                        .foregroundStyle(LoopColor.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: LoopSpace.s) {
+                    check("battery.100percent", "Is it charged?")
+                    check("antenna.radiowaves.left.and.right", "Is it nearby, on your wrist?")
+                    check("dot.radiowaves.right", "Is Bluetooth on?")
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
             Button {
+                // Noop's user-initiated connect: it also clears Noop's give-up and reconnect pause.
                 model.scan()
                 dismiss()
             } label: {
-                Text("Find my strap")
+                Text(status.isNeedsPairing ? "Try again" : "Find my strap")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoopColor.night)
                     .frame(maxWidth: .infinity, minHeight: 50)

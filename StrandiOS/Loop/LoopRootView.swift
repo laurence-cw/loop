@@ -11,6 +11,7 @@ enum LoopPrefs {
 /// Noop's terms screen is skipped by the owner's choice.
 struct LoopRootView: View {
     @AppStorage("noop.onboarded") private var onboarded = false
+    @EnvironmentObject private var repo: Repository
 
     var body: some View {
         ZStack {
@@ -25,6 +26,15 @@ struct LoopRootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.35), value: onboarded)
+        // The launch duties of Noop's own root (RootTabView), which Loop replaces: read what's stored,
+        // then Noop's on-launch backup catch-up (detached, utility priority, gated on its own toggle).
+        .task {
+            await repo.refresh()
+            let backupRepo = repo
+            Task.detached(priority: .utility) {
+                await FolderBackup.catchUpIfDue(checkpoint: { await backupRepo.checkpointForBackup() })
+            }
+        }
     }
 
     /// DEBUG: `--demo-seed` skips setup so a seeded simulator build can be screenshotted.

@@ -21,7 +21,6 @@ struct LoopAdvancedView: View {
         List {
             Section {
                 Button("Find my strap") { model.scan() }
-                if live.connected { Button("Disconnect") { model.disconnect() } }
                 // Noop offers a restart only to a connected strap that isn't a 4.0.
                 if live.connected && model.whoop5Detected {
                     Button("Restart strap") { confirmRestart = true }

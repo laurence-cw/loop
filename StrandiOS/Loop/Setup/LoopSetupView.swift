@@ -4,7 +4,7 @@ import CoreBluetooth
 import StrandAnalytics
 
 /// Loop's first run: four screens, no more. Welcome, Bluetooth, Pair your strap, About you.
-/// Pairing goes through Noop's own calls (`AppModel.scan(model:)`, `stopWhoopScan()`, `disconnect()`)
+/// Pairing goes through Noop's own call (`AppModel.scan(model:)`), never `disconnect()`
 /// and Noop's own signals (`LiveState.connected` / `.bonded`), the way Noop's own setup does.
 /// Loop changes nothing about how it connects.
 struct LoopSetupView: View {
@@ -266,7 +266,7 @@ private struct LoopPairStep: View {
                       buttonEnabled: buttonEnabled,
                       action: action,
                       secondary: live.bonded ? nil : AnyView(
-                        Button("Pair later") { model.stopWhoopScan(); pairLater = true; next() }
+                        Button("Pair later") { pairLater = true; next() }
                             .font(LoopFont.body)
                             .foregroundStyle(LoopColor.muted)
                             .frame(minHeight: 44)
@@ -281,13 +281,11 @@ private struct LoopPairStep: View {
             if live.bonded, picked == nil { picked = WhoopModel(rawValue: selectedModelRaw) }
         }
         .onDisappear {
-            // Leaving mid-search (Back, or Pair later) must not leave Noop's scan or a half-made
-            // connection running; the same teardown as choosing a different strap.
-            if !live.bonded && (searching || live.connected) {
-                attempt += 1
-                model.stopWhoopScan()
-                model.disconnect()
-            }
+            // Leaving mid-search (Back, or Pair later) leaves Noop's connect attempt running, as Noop's own
+            // setup does: the strap pairs whenever it turns up. Calling `disconnect()` here would latch
+            // Noop's intentional-disconnect flag, which switches off every automatic reconnect until the
+            // app restarts. Only this screen's own timer is retired.
+            attempt += 1
             searching = false
         }
     }
@@ -390,13 +388,13 @@ private struct LoopPairStep: View {
         }
     }
 
-    /// Same as Noop's restartScan: drop any half-made connection before choosing again.
+    /// Back to the choice. No `disconnect()`: the next "Find my strap" goes through Noop's `connect`,
+    /// which itself releases a half-made link to the other strap family, and leaving one running in the
+    /// meantime keeps auto-reconnect alive (`disconnect()` would switch it off until relaunch).
     private func switchStrap() {
         attempt += 1
         searching = false
         showHelp = false
-        model.stopWhoopScan()
-        model.disconnect()
         picked = nil
     }
 

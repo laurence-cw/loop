@@ -42,13 +42,19 @@ struct LoopActivityView: View {
         .background(LoopColor.night.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // The Loop mark sits in the bar until the page title scrolls away, then hands over to it.
             ToolbarItem(placement: .principal) {
-                Text("Activity")
-                    .font(LoopFont.inlineTitle)
-                    .foregroundStyle(LoopColor.text)
-                    .opacity(titleScrolledAway ? 1 : 0)
-                    .animation(.easeOut(duration: 0.2), value: titleScrolledAway)
+                ZStack {
+                    LoopMark(size: 30)
+                        .opacity(titleScrolledAway ? 0 : 1)
+                    Text("Activity")
+                        .font(LoopFont.inlineTitle)
+                        .foregroundStyle(LoopColor.text)
+                        .opacity(titleScrolledAway ? 1 : 0)
+                }
+                .animation(.easeOut(duration: 0.2), value: titleScrolledAway)
             }
+            ToolbarItem(placement: .topBarTrailing) { LoopStrapGauges() }
         }
         .toolbarColorScheme(.dark, for: .navigationBar)
         .modifier(LoopSoftTopEdge())

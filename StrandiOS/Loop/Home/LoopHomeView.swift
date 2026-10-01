@@ -122,14 +122,16 @@ struct LoopHomeView: View {
 
     // MARK: Above the fold
 
-    /// Logo and pill at the top; the day, the ring, its two values and the sentence sit together as one group,
+    /// Logo, strap gauges and Settings at the top; the day, the ring, its two values and the sentence sit together as one group,
     /// centred in what's left. The ring, values and sentence page sideways together, one day per page.
     private var hero: some View {
         VStack(spacing: 0) {
-            // The logo on the left, Settings on the right; the strap's status pill sits under them.
-            HStack {
+            // The logo on the left; the strap's sync and battery on the right beside Settings, where they
+            // sit on every other screen too (those screens need the left for their back button).
+            HStack(spacing: LoopSpace.xs) {
                 LoopLogo()
-                Spacer(minLength: LoopSpace.s)
+                Spacer(minLength: LoopSpace.xs)
+                LoopStrapGauges()
                 Button { openSettings = true } label: {
                     Image(systemName: "gearshape")
                         .font(.body)
@@ -141,9 +143,6 @@ struct LoopHomeView: View {
             .padding(.leading, LoopSpace.s)
             .padding(.trailing, LoopSpace.xs)
             .padding(.top, LoopSpace.xs)
-
-            LoopStatusPill(status: status, battery: live.batteryPct) { showFindStrap = true }
-                .padding(.top, LoopSpace.s)
 
             if status == .bluetoothOff {
                 LoopBluetoothCard()
@@ -175,6 +174,14 @@ struct LoopHomeView: View {
                 .scrollIndicators(.hidden)
                 .defaultScrollAnchor(.trailing)
                 .sensoryFeedback(.selection, trigger: selected)
+            }
+
+            // Under the ring, and only when there's something to do: pair, find or switch Bluetooth on.
+            // When all is well the gauges at the top already say so.
+            if status.needsHelp {
+                LoopStatusPill(status: status) { showFindStrap = true }
+                    .padding(.top, LoopSpace.m)
+                    .transition(.opacity)
             }
 
             Spacer(minLength: LoopSpace.xl)
@@ -473,11 +480,11 @@ struct LoopCardBackground: View {
     }
 }
 
-/// The small status pill at the top of Home. Tappable only when something needs fixing.
+/// The status pill under Home's ring, shown only when something needs doing. Battery and sync live
+/// in the gauges at the top.
 /// It never borrows Recovery's colours: Recovery is the only thing in Loop that changes colour.
 struct LoopStatusPill: View {
     let status: LoopStatus
-    let battery: Double?
     let onHelp: () -> Void
 
     var body: some View {
@@ -487,14 +494,6 @@ struct LoopStatusPill: View {
                 Text(status.text)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(status.needsHelp ? LoopColor.text : LoopColor.muted)
-                if let b = battery, b < 20, !status.needsHelp {
-                    Image(systemName: "battery.25percent")
-                        .font(.footnote)
-                        .foregroundStyle(LoopColor.text)
-                    Text("\(Int(b.rounded()))%")
-                        .font(.footnote.weight(.medium).monospacedDigit())
-                        .foregroundStyle(LoopColor.text)
-                }
                 if status.needsHelp {
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.bold))

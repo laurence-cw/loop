@@ -280,9 +280,8 @@ extension View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(title).font(LoopFont.inlineTitle).foregroundStyle(LoopColor.text)
-                }
+                ToolbarItem(placement: .principal) { LoopBarTitle(title: title) }
+                ToolbarItem(placement: .topBarTrailing) { LoopStrapGauges() }
             }
             .toolbarColorScheme(.dark, for: .navigationBar)
             .environment(\.colorScheme, .dark)

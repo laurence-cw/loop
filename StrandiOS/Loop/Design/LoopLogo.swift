@@ -46,3 +46,18 @@ struct LoopLogo: View {
         .accessibilityAddTraits(.isHeader)
     }
 }
+
+/// A list screen's bar title with the Loop mark in front of it: "◌ Settings".
+struct LoopBarTitle: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            LoopMark(size: 26)
+            Text(title).font(LoopFont.inlineTitle).foregroundStyle(LoopColor.text)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isHeader)
+    }
+}

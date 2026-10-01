@@ -1,16 +1,23 @@
 import SwiftUI
 import UIKit
 
-/// Loop's Home. Above the fold: the status pill, the loop ring and one sentence. Nothing else.
-/// Below it: one quiet row per section.
+/// Loop's Home. Above the fold: the status pill, the day, the loop ring and one sentence. Nothing else.
+/// Swipe the ring sideways to look back over the last two weeks. Below it: one quiet row per section.
 struct LoopHomeView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var live: LiveState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @AppStorage(LoopPrefs.firstNameKey) private var firstName = ""
+    /// Today, live. The section screens are always today and share this.
     @State private var today = LoopToday.empty
+    /// Earlier days, from Noop's stored rows, keyed by day.
+    @State private var past: [String: LoopToday] = [:]
+    @State private var pages: [Page] = []
+    /// The page in view. Nil until the pages exist; then today's key unless swiped back.
+    @State private var selected: String?
     @State private var showFindStrap = false
     @State private var openRecovery = false
     @State private var openSleep = false
@@ -19,8 +26,25 @@ struct LoopHomeView: View {
     @State private var openBreathe = false
     private static let rowsAnchor = "loop.home.rows"
 
+    struct Page: Equatable {
+        let key: String
+        let date: Date
+        let isToday: Bool
+    }
+
     private var status: LoopStatus {
         LoopStatus.resolve(live: live, hasStrap: !(model.deviceRegistry?.devices.isEmpty ?? true))
+    }
+
+    private var todayKey: String? { pages.last?.key }
+    private var shownPage: Page? { pages.first(where: { $0.key == selected }) ?? pages.last }
+    private var isShowingToday: Bool { shownPage?.isToday ?? true }
+    /// The day the rows below the fold describe: whichever page is in view.
+    private var shown: LoopToday { data(for: shownPage) }
+
+    private func data(for page: Page?) -> LoopToday {
+        guard let page, !page.isToday else { return today }
+        return past[page.key] ?? .empty
     }
 
     var body: some View {
@@ -55,14 +79,33 @@ struct LoopHomeView: View {
         .background(LoopColor.night.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .task(id: repo.refreshSeq) {
+            let newPages = LoopPastDayReader.keys(repo: repo).enumerated().map { i, p in
+                Page(key: p.key, date: p.date, isToday: i == LoopPastDayReader.span - 1)
+            }
             today = await LoopTodayReader.read(repo: repo, profile: profile)
+            past = await LoopPastDayReader.read(repo: repo, dayKeys: newPages.dropLast().map(\.key))
             #if DEBUG
             if let preview = LoopPreviewState.requested { today = preview.apply(to: today) }
+            if CommandLine.arguments.contains("--loop-preview-days") { past = LoopPreviewState.pastDays(newPages) }
+            #endif
+            if pages != newPages {
+                // A new day has started (or first load): land on today.
+                pages = newPages
+                selected = newPages.last?.key
+            }
+            #if DEBUG
             if CommandLine.arguments.contains("--loop-open-recovery") { openRecovery = true }
             if CommandLine.arguments.contains("--loop-open-sleep") { openSleep = true }
             if CommandLine.arguments.contains("--loop-open-activity") { openActivity = true }
             if CommandLine.arguments.contains("--loop-open-settings") { openSettings = true }
             if CommandLine.arguments.contains("--loop-open-breathe") { openBreathe = true }
+            if let i = CommandLine.arguments.firstIndex(of: "--loop-day-back"), i + 1 < CommandLine.arguments.count,
+               let back = Int(CommandLine.arguments[i + 1]), back < pages.count {
+                let key = pages[pages.count - 1 - back].key
+                // After the pager has laid out, the same way a tap on the chevron moves it.
+                try? await Task.sleep(for: .seconds(1))
+                step(to: pages.firstIndex(where: { $0.key == key }) ?? pages.count - 1)
+            }
             #endif
         }
         .refreshable { model.ble.syncNow() }
@@ -79,8 +122,8 @@ struct LoopHomeView: View {
 
     // MARK: Above the fold
 
-    /// Pill at the top; the ring, its two values and the sentence sit together as one group, centred
-    /// in what's left, with fixed gaps inside the group.
+    /// Pill at the top; the day, the ring, its two values and the sentence sit together as one group,
+    /// centred in what's left. The ring, values and sentence page sideways together, one day per page.
     private var hero: some View {
         VStack(spacing: 0) {
             LoopStatusPill(status: status, battery: live.batteryPct) { showFindStrap = true }
@@ -103,43 +146,108 @@ struct LoopHomeView: View {
                     .padding(.top, LoopSpace.s)
             }
 
-            Spacer(minLength: LoopSpace.xl)
+            Spacer(minLength: LoopSpace.l)
 
-            VStack(spacing: 0) {
-                Button { openRecovery = true } label: {
-                    LoopRing(today: today, sleepFraction: sleepFraction, effortFraction: effortFraction)
-                        .frame(maxWidth: 320)
-                        .contentShape(Circle())
+            dayHeader
+                .padding(.horizontal, LoopSpace.edge)
+                .padding(.bottom, LoopSpace.m)
+
+            if pages.isEmpty {
+                dayPage(Page(key: "", date: .now, isToday: true))
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(pages, id: \.key) { page in
+                            dayPage(page)
+                                .containerRelativeFrame(.horizontal)
+                                .id(page.key)
+                        }
+                    }
+                    .scrollTargetLayout()
                 }
-                .buttonStyle(LoopPressStyle())
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(ringAccessibilityLabel)
-                .accessibilityHint("Opens Recovery")
-
-                arcFeet
-                    .frame(maxWidth: 320)
-                    .padding(.top, LoopSpace.s)
-
-                Text(sentence)
-                    .font(LoopFont.sentence)
-                    .foregroundStyle(LoopColor.text)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, LoopSpace.xl)
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $selected)
+                .scrollIndicators(.hidden)
+                .defaultScrollAnchor(.trailing)
+                .sensoryFeedback(.selection, trigger: selected)
             }
-            .padding(.horizontal, LoopSpace.l)
 
             Spacer(minLength: LoopSpace.xl)
         }
     }
 
+    /// "Today" / "Yesterday" / "Monday" with a step either way, so the days can be reached without
+    /// swiping (and by VoiceOver).
+    private var dayHeader: some View {
+        let index = pages.firstIndex(where: { $0.key == shownPage?.key }) ?? max(pages.count - 1, 0)
+        return HStack(spacing: LoopSpace.xs) {
+            stepButton("chevron.left", label: "Earlier day", enabled: index > 0) { step(to: index - 1) }
+            Text(shownPage.map { Self.dayTitle($0) } ?? "Today")
+                .font(LoopFont.inlineTitle)
+                .foregroundStyle(isShowingToday ? LoopColor.text : LoopColor.muted)
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: selected)
+                .frame(maxWidth: .infinity)
+                .accessibilityAddTraits(.isHeader)
+            stepButton("chevron.right", label: "Later day", enabled: index < pages.count - 1) { step(to: index + 1) }
+        }
+        .frame(maxWidth: 320)
+    }
+
+    private func stepButton(_ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(LoopColor.muted)
+                .frame(width: 44, height: 44)
+        }
+        .opacity(enabled ? 1 : 0)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func step(to i: Int) {
+        guard pages.indices.contains(i) else { return }
+        withAnimation(reduceMotion ? nil : .smooth(duration: 0.35)) { selected = pages[i].key }
+    }
+
+    /// One day: the ring (tappable today, opening Recovery), its two values and the sentence.
+    private func dayPage(_ page: Page) -> some View {
+        let t = data(for: page)
+        return VStack(spacing: 0) {
+            Button { openRecovery = true } label: {
+                LoopRing(today: t, sleepFraction: sleepFraction(t), effortFraction: effortFraction(t))
+                    .frame(maxWidth: 320)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(LoopPressStyle())
+            .disabled(!page.isToday)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(ringAccessibilityLabel(t))
+            .accessibilityHint(page.isToday ? "Opens Recovery" : "")
+
+            arcFeet(t)
+                .frame(maxWidth: 320)
+                .padding(.top, LoopSpace.s)
+
+            Text(sentence(t, page: page))
+                .font(LoopFont.sentence)
+                .foregroundStyle(LoopColor.text)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, LoopSpace.xl)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, LoopSpace.l)
+    }
+
     /// Each arc's value at its outer foot, marked by its section's symbol.
     /// Side by side at each foot when they fit; stacked (left value above right) at large text sizes.
-    private var arcFeet: some View {
+    private func arcFeet(_ t: LoopToday) -> some View {
         let sleep = footValue(symbol: "moon.fill", colour: LoopColor.signal,
-                              text: today.sleepMin.map { LoopFormat.duration($0 * 60) })
+                              text: t.sleepMin.map { LoopFormat.duration($0 * 60) })
         let effort = footValue(symbol: "figure.walk", colour: LoopColor.pulse,
-                               text: today.effort.map { "\(Int($0.rounded()))" }, unit: "/100")
+                               text: t.effort.map { "\(Int($0.rounded()))" }, unit: "/100")
         return ViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline, spacing: LoopSpace.l) {
                 sleep.fixedSize()
@@ -173,33 +281,59 @@ struct LoopHomeView: View {
 
     // MARK: Below the fold
 
+    /// The rows follow the day in view. The sections themselves are today's, so an earlier day's rows
+    /// are for reading, not opening.
     private var rows: some View {
-        VStack(spacing: LoopSpace.s) {
+        let t = shown, opens = isShowingToday
+        return VStack(spacing: LoopSpace.s) {
             Button { openRecovery = true } label: {
-                LoopSectionRow(symbol: "bolt.fill", title: "Recovery", colour: recoveryColour,
-                               word: recoveryWord, value: today.recovery.score.map { "\($0)" }, opens: true)
+                LoopSectionRow(symbol: "bolt.fill", title: "Recovery", colour: recoveryColour(t),
+                               word: t.recovery.score.map { RecoveryBand(score: $0).word },
+                               value: t.recovery.score.map { "\($0)" }, opens: opens)
             }
             .buttonStyle(LoopPressStyle())
+            .disabled(!opens)
             Button { openSleep = true } label: {
                 LoopSectionRow(symbol: "moon.fill", title: "Sleep", colour: LoopColor.signal,
-                               word: sleepWord, value: today.sleepMin.map { LoopFormat.duration($0 * 60) },
-                               opens: true)
+                               word: t.sleepScore.map { ScoreWord.word(for: $0) },
+                               value: t.sleepMin.map { LoopFormat.duration($0 * 60) }, opens: opens)
             }
             .buttonStyle(LoopPressStyle())
+            .disabled(!opens)
             Button { openActivity = true } label: {
                 LoopSectionRow(symbol: "figure.walk", title: "Activity", colour: LoopColor.pulse,
-                               word: effortWord, value: today.effort.map { "\(Int($0.rounded()))" },
-                               detail: today.steps.map { "\(LoopFormat.steps($0)) steps" }, opens: true)
+                               word: t.effort.map { ScoreWord.word(for: Int($0.rounded())) },
+                               value: t.effort.map { "\(Int($0.rounded()))" },
+                               detail: t.steps.map { "\(LoopFormat.steps($0)) steps" }, opens: opens)
             }
             .buttonStyle(LoopPressStyle())
+            .disabled(!opens)
         }
+        .animation(.easeInOut(duration: 0.25), value: selected)
     }
 
     // MARK: Words
 
-    private var sentence: String {
+    /// "Today" / "Yesterday" / "Monday" this past week / "Mon 21 Sep" before that.
+    static func dayTitle(_ page: Page) -> String {
+        if page.isToday { return "Today" }
+        let cal = Calendar.current
+        let back = cal.dateComponents([.day], from: cal.startOfDay(for: page.date),
+                                      to: cal.startOfDay(for: Repository.logicalDay(.now))).day ?? 0
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_GB")
+        switch back {
+        case 1: return "Yesterday"
+        case 2...6: f.dateFormat = "EEEE"
+        default: f.dateFormat = "EEE d MMM"
+        }
+        return f.string(from: page.date)
+    }
+
+    private func sentence(_ t: LoopToday, page: Page) -> String {
+        guard page.isToday else { return pastSentence(t, page: page) }
         let hello = LoopFormat.greeting(name: firstName)
-        switch today.recovery {
+        switch t.recovery {
         case .scored(let s), .carried(let s):
             return "\(hello) \(RecoveryBand(score: s).line)"
         case .learning(let nights, let of):
@@ -210,47 +344,48 @@ struct LoopHomeView: View {
         }
     }
 
-    private var recoveryColour: Color {
-        today.recovery.score.map { RecoveryBand(score: $0).colour } ?? LoopColor.muted
+    /// An earlier day, said plainly in the past tense.
+    private func pastSentence(_ t: LoopToday, page: Page) -> String {
+        let title = Self.dayTitle(page)
+        let when = title == "Yesterday" ? "Yesterday" : "On \(title)"
+        guard let s = t.recovery.score else { return "No score for \(title == "Yesterday" ? "yesterday" : title)." }
+        switch RecoveryBand(score: s) {
+        case .charged: return "\(when) you were fully charged."
+        case .steady: return "\(when) you were half charged."
+        case .low: return "\(when) you were running low."
+        }
     }
 
-    private var recoveryWord: String? {
-        today.recovery.score.map { RecoveryBand(score: $0).word }
+    /// Recovery's colour is the day's band. With no score yet it takes Glow, Loop's in-between colour,
+    /// so the row still reads as Recovery rather than switched off.
+    private func recoveryColour(_ t: LoopToday) -> Color {
+        t.recovery.score.map { RecoveryBand(score: $0).colour } ?? LoopColor.glow
     }
 
-    private var sleepFraction: Double? {
-        today.sleepMin.map { $0 / max(today.sleepNeedMin, 1) }
+    private func sleepFraction(_ t: LoopToday) -> Double? {
+        t.sleepMin.map { $0 / max(t.sleepNeedMin, 1) }
     }
 
-    /// The word comes from Noop's own sleep score, not from Loop's arithmetic.
-    private var sleepWord: String? {
-        today.sleepScore.map { ScoreWord.word(for: $0) }
+    private func effortFraction(_ t: LoopToday) -> Double? {
+        t.effort.map { $0 / 100 }
     }
 
-    private var effortFraction: Double? {
-        today.effort.map { $0 / 100 }
-    }
-
-    private var effortWord: String? {
-        today.effort.map { ScoreWord.word(for: Int($0.rounded())) }
-    }
-
-    private var ringAccessibilityLabel: String {
+    private func ringAccessibilityLabel(_ t: LoopToday) -> String {
         var parts: [String] = []
-        switch today.recovery {
+        switch t.recovery {
         case .scored(let s), .carried(let s):
             parts.append("Recovery \(s) out of 100, \(RecoveryBand(score: s).word)")
         case .learning(let n, let of):
             parts.append("Recovery: getting to know you, \(n) of \(of) nights")
         case .noData:
-            parts.append("Recovery: no score yet")
+            parts.append("Recovery: no score")
         }
-        if let m = today.sleepMin {
-            parts.append("Sleep \(LoopFormat.duration(m * 60)) of \(LoopFormat.duration(today.sleepNeedMin * 60)) needed")
+        if let m = t.sleepMin {
+            parts.append("Sleep \(LoopFormat.duration(m * 60)) of \(LoopFormat.duration(t.sleepNeedMin * 60)) needed")
         } else {
             parts.append("Sleep: no data")
         }
-        if let e = today.effort { parts.append("Effort \(Int(e.rounded())) out of 100") }
+        if let e = t.effort { parts.append("Effort \(Int(e.rounded())) out of 100") }
         return parts.joined(separator: ". ")
     }
 }
@@ -488,6 +623,24 @@ enum LoopPreviewState: String {
         }
         if CommandLine.arguments.contains("--loop-preview-activity") { t.effort = 58; t.steps = 13_277 }
         return t
+    }
+
+    /// DEBUG-only `--loop-preview-days`: a varied fortnight behind today, one night missing.
+    static func pastDays(_ pages: [LoopHomeView.Page]) -> [String: LoopToday] {
+        let scores = [71, 44, 88, 63, 29, 55, 80, 47, 92, 38, 66, 74, 58]
+        var out: [String: LoopToday] = [:]
+        for (i, page) in pages.dropLast().enumerated() {
+            var t = LoopToday()
+            if i == 9 { out[page.key] = t; continue }
+            let s = scores[i % scores.count]
+            t.recovery = .scored(s)
+            t.sleepMin = 380 + Double((s * 7) % 140)
+            t.sleepScore = min(s + 8, 100)
+            t.effort = Double(30 + (s * 3) % 55)
+            t.steps = 6_000 + (s * 137) % 9_000
+            out[page.key] = t
+        }
+        return out
     }
 }
 #endif

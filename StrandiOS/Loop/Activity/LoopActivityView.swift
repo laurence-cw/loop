@@ -164,9 +164,6 @@ struct LoopEffortRing: View {
 struct LoopDayEffortCard: View {
     let hours: [LoopActivity.Hour]
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var grown = false
-
     private var peak: Double { max(hours.compactMap(\.added).max() ?? 0, 0.01) }
 
     var body: some View {
@@ -210,9 +207,6 @@ struct LoopDayEffortCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(LoopSpace.cardPadding)
         .background(LoopCardBackground(glow: LoopColor.pulse))
-        .onAppear {
-            if reduceMotion { grown = true } else { withAnimation(LoopMotion.fill) { grown = true } }
-        }
     }
 
     @ViewBuilder
@@ -224,13 +218,15 @@ struct LoopDayEffortCard: View {
             RoundedRectangle(cornerRadius: 3)
                 .fill(LoopColor.pulse.opacity(f >= 0.6 ? 1 : 0.45))
                 .frame(maxWidth: .infinity)
-                .frame(height: grown ? max(96 * f, 3) : 3)
+                .frame(height: max(96 * f, 3))
+                .loopBuildIn(h.hour - 6, stagger: 0.03)
         } else {
             // Nothing recorded this hour: a grey stub, not a zero.
             RoundedRectangle(cornerRadius: 2)
                 .fill(LoopColor.line)
                 .frame(maxWidth: .infinity)
                 .frame(height: 3)
+                .loopBuildIn(h.hour - 6, stagger: 0.03)
         }
     }
 
@@ -344,12 +340,14 @@ struct LoopWeekBars: View {
                                     RoundedRectangle(cornerRadius: 4)
                                         .fill(LoopColor.pulse.opacity(i == values.count - 1 ? 1 : 0.55))
                                         .frame(height: max(CGFloat(v / maxValue) * 64, 3))
+                                        .loopBuildIn(i)
                                 } else {
                                     Text("No\ndata")
                                         .font(LoopFont.meta)
                                         .foregroundStyle(LoopColor.muted)
                                         .multilineTextAlignment(.center)
                                         .fixedSize()
+                                        .loopBuildIn(i)
                                 }
                             }
                         }

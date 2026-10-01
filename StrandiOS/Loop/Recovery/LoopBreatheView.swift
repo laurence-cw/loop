@@ -2,7 +2,8 @@ import SwiftUI
 import Combine
 import StrandAnalytics
 
-/// About two minutes of slow breathing. The orb paces the breath (grows in, shrinks out) in the
+/// About two minutes of slow breathing. The orb paces the breath (grows right out on the in-breath,
+/// shrinks to a seed on the out-breath) in the
 /// in-between Glow colour, and the strap buzzes on each change through Noop's own gated buzz
 /// (`AppModel.buzz(loops:gate:)`, one pulse in, two out, from `BreathProtocolPlayer`).
 /// The pace is Noop's own, built exactly as Noop's `resonanceStages()` builds it: the wearer's locked
@@ -20,13 +21,24 @@ struct LoopBreatheView: View {
     @State private var phaseEnds = Date.distantFuture
     /// The one end time the session, the countdown and the strap all stop at.
     @State private var sessionEnds: Date?
-    @State private var orbScale: CGFloat = 0.72
-    @State private var idle = false
+    /// Where the orb was when the current phase (or the settle back to rest) began, so every move
+    /// starts from exactly where the last one left off: no jumps when the word changes.
+    @State private var moveFrom: CGFloat = Self.restScale
+    @State private var moveStarted = Date()
     @State private var now = Date()
 
     @ScaledMetric(relativeTo: .title2) private var wordSize: CGFloat = 28
-    private let diameter: CGFloat = 260
+    private let diameter: CGFloat = 280
     private let tick = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+
+    /// Fully out: a small bright seed. Fully in: the whole circle.
+    private static let emptyScale: CGFloat = 0.34
+    private static let fullScale: CGFloat = 1.0
+    /// At rest the orb sits half-full and drifts very slightly.
+    private static let restScale: CGFloat = 0.56
+    private static let restDrift: CGFloat = 0.025
+    /// How long the orb takes to settle back to rest after Stop or Done.
+    private static let settle: TimeInterval = 1.4
 
     // MARK: Noop's pace
 
@@ -41,24 +53,32 @@ struct LoopBreatheView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                Text(headline)
-                    .font(LoopFont.sentence)
-                    .foregroundStyle(LoopColor.text)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, LoopSpace.xl)
-                    .padding(.horizontal, LoopSpace.l)
+                // Every headline is laid out (hidden) so the orb never shifts when the words change.
+                ZStack {
+                    ForEach(Self.allHeadlines, id: \.self) { Text($0).hidden() }
+                    Text(headline)
+                        .contentTransition(.opacity)
+                        .animation(.easeInOut(duration: 0.4), value: phase)
+                }
+                .font(LoopFont.sentence)
+                .foregroundStyle(LoopColor.text)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, LoopSpace.xl)
+                .padding(.horizontal, LoopSpace.l)
 
-                orb
-                    .frame(width: diameter * 1.18, height: diameter * 1.18)
-                    .padding(.top, LoopSpace.xl)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(phaseWord ?? "Done")
+                TimelineView(.animation(paused: reduceMotion)) { context in
+                    orb(scale: scale(at: context.date))
+                }
+                .frame(width: diameter * 1.25, height: diameter * 1.25)
+                .padding(.top, LoopSpace.l)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(phaseWord ?? "Done")
 
                 Text(remaining)
                     .font(LoopFont.meta)
                     .foregroundStyle(LoopColor.muted)
-                    .padding(.top, LoopSpace.s)
+                    .padding(.top, LoopSpace.xs)
                     .opacity(running ? 1 : 0)
             }
             .frame(maxWidth: .infinity)
@@ -93,44 +113,102 @@ struct LoopBreatheView: View {
             // Noop treats a missing breathing-buzz setting as off; Loop's switch starts on, so write it
             // once to make the switch and the strap agree.
             if UserDefaults.standard.object(forKey: HapticPrefs.breathing) == nil { buzzOn = true }
-            breatheIdle()
+            #if DEBUG
+            // DEBUG-only: `--loop-breathe-start` starts a session on open, for screenshots.
+            if CommandLine.arguments.contains("--loop-breathe-start") { start() }
+            #endif
         }
         .onDisappear { if running { stop(finished: false) } }
     }
 
+    // MARK: Orb motion
+
+    /// Sine ease: slow off the mark, slow into the turn, the way a breath actually moves.
+    private static func ease(_ p: Double) -> CGFloat {
+        CGFloat(0.5 - 0.5 * cos(.pi * min(max(p, 0), 1)))
+    }
+
+    /// The orb's size at a moment, worked out from the clock rather than animated, so the pace is
+    /// exact and a phase change can never jolt it.
+    private func scale(at t: Date) -> CGFloat {
+        if reduceMotion { return running ? 0.8 : Self.restScale }
+        if running {
+            let target = phase == .inhale ? Self.fullScale : Self.emptyScale
+            let e = Self.ease(t.timeIntervalSince(moveStarted) / max(phaseEnds.timeIntervalSince(moveStarted), 0.1))
+            return moveFrom + (target - moveFrom) * e
+        }
+        let drift = Self.restDrift * CGFloat(sin(2 * .pi * t.timeIntervalSinceReferenceDate / LoopMotion.breathPeriod))
+        let rest = Self.restScale + drift
+        let e = Self.ease(t.timeIntervalSince(moveStarted) / Self.settle)
+        return moveFrom + (rest - moveFrom) * e
+    }
+
+    /// How full the breath is, 0 (all out) to 1 (all in). The light follows it.
+    private func fullness(_ scale: CGFloat) -> Double {
+        Double((scale - Self.emptyScale) / (Self.fullScale - Self.emptyScale))
+    }
+
     // MARK: Orb (LoopOrb's own proportions, in Glow)
 
-    private var orb: some View {
-        let scale = (running ? orbScale : 0.72) * (idle && !running && !reduceMotion ? LoopMotion.breathScale : 1)
+    private func orb(scale: CGFloat) -> some View {
+        let f = fullness(scale)
         return ZStack {
-            ZStack {
+            // Where a full breath reaches: a faint guide ring, always there.
             Circle()
-                .fill(LoopColor.glow.opacity(LoopGlow.strong))
-                .frame(width: diameter * 1.18, height: diameter * 1.18)
-                .blur(radius: diameter * 0.16)
+                .strokeBorder(LoopColor.glow.opacity(0.22), lineWidth: 1)
+                .frame(width: diameter, height: diameter)
+
+            // The light behind: brighter and wider the fuller the breath.
+            Circle()
+                .fill(LoopColor.glow.opacity(0.12 + 0.3 * f))
+                .frame(width: diameter * 1.15, height: diameter * 1.15)
+                .blur(radius: diameter * 0.14)
+                .scaleEffect(scale)
+
+            // Two ripples that open out as the breath fills and fold back in as it empties.
+            ForEach(1...2, id: \.self) { i in
+                Circle()
+                    .strokeBorder(LoopColor.glow.opacity((0.35 / Double(i)) * f), lineWidth: 1)
+                    .frame(width: diameter, height: diameter)
+                    .scaleEffect(scale * (1 + 0.07 * CGFloat(i) * CGFloat(f)))
+            }
+
+            // The orb itself.
             Circle()
                 .fill(LoopColor.surface)
-                .overlay(Circle().fill(RadialGradient(colors: [LoopColor.glow.opacity(LoopGlow.strong), .clear],
-                                                      center: .center, startRadius: 0, endRadius: diameter * 0.55)))
-                .overlay(Circle().strokeBorder(LoopColor.glow.opacity(LoopGlow.strong), lineWidth: 1))
+                .overlay(Circle().fill(RadialGradient(
+                    colors: [LoopColor.glow.opacity(0.55 - 0.25 * f), LoopColor.glow.opacity(0.08)],
+                    center: .center, startRadius: 0, endRadius: diameter * 0.5)))
+                .overlay(Circle().strokeBorder(LoopColor.glow.opacity(0.5), lineWidth: 1))
                 .frame(width: diameter, height: diameter)
-            }
-            .scaleEffect(scale)
-            // The word stays one size; only the light breathes.
+                .scaleEffect(scale)
+
+            // The word stays one size and in one place; only the light breathes.
             if let word = phaseWord {
                 Text(word)
                     .font(LoopFont.word(size: wordSize))
                     .foregroundStyle(LoopColor.text)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
-                    .frame(width: diameter * 0.6)
+                    .frame(width: diameter * 0.5)
+                    // The old word is gone before the new one arrives, so the two never overlap.
                     .id(word)
-                    .transition(.opacity)
+                    .transition(.asymmetric(
+                        insertion: .opacity.animation(.easeIn(duration: 0.3).delay(0.2)),
+                        removal: .opacity.animation(.easeOut(duration: 0.2))))
             }
         }
+        .animation(.default, value: phaseWord)
     }
 
     // MARK: Words
+
+    private static let allHeadlines = [
+        "Slow breathing helps your body settle. About two minutes.",
+        "Breathe with the words.",
+        "Breathe in as it grows, out as it shrinks.",
+        "Done. Nice and calm.",
+    ]
 
     private var headline: String {
         switch phase {
@@ -174,12 +252,11 @@ struct LoopBreatheView: View {
         ScreenIdle.keepAwake(false)
         phaseEnds = .distantFuture
         sessionEnds = nil
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.8)) {
-            phase = finished ? .done : .ready
-            orbScale = 0.72
-        }
+        let t = Date()
+        moveFrom = scale(at: t)
+        moveStarted = t
+        phase = finished ? .done : .ready
         announce(finished ? "Done" : "Stopped")
-        breatheIdle()
     }
 
     private func advance(_ t: Date) {
@@ -199,23 +276,15 @@ struct LoopBreatheView: View {
     /// breaths keep exact time with the countdown's one end time.
     private func enter(_ next: Phase) {
         let duration = next == .inhale ? inhale : exhale
+        // The move starts from wherever the orb is now and lands on the phase's deadline.
+        let t = Date()
+        moveFrom = scale(at: t)
+        moveStarted = t
         phaseEnds = phaseEnds.addingTimeInterval(duration)
-        withAnimation(.easeInOut(duration: 0.25)) { phase = next }
-        if !reduceMotion {
-            withAnimation(.easeInOut(duration: duration)) { orbScale = next == .inhale ? 1.0 : 0.72 }
-        }
+        phase = next
         announce(next == .inhale ? "In" : "Out")
         let loops = BreathProtocolPlayer.loops(for: next == .inhale ? .inhale : .exhale)
         if loops > 0 { model.buzz(loops: UInt8(clamping: loops), gate: HapticPrefs.breathing) }
-    }
-
-    /// The orb's slow idle breath when it isn't pacing (frozen under Reduce Motion).
-    private func breatheIdle() {
-        guard !reduceMotion else { return }
-        idle = false
-        withAnimation(.easeInOut(duration: LoopMotion.breathPeriod / 2).repeatForever(autoreverses: true)) {
-            idle = true
-        }
     }
 
     private func announce(_ text: String) {

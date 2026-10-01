@@ -61,6 +61,8 @@ enum LoopGlow {
 enum LoopMotion {
     /// Rings and arcs fill once on open.
     static let fill = Animation.easeOut(duration: 0.8)
+    /// A chart bar growing in: quick, settling with the slightest give, never a bounce.
+    static let build = Animation.spring(duration: 0.7, bounce: 0.12)
     /// Recovery colour change: a cross-fade, never a flash.
     static let colourFade = Animation.easeInOut(duration: 0.6)
     /// One slow orb breath.

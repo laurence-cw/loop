@@ -107,3 +107,43 @@ enum LoopTodayReader {
         return (from, max(from, now - 1))
     }
 }
+
+/// One earlier day for Home's swipe-back, read from Noop's stored nightly row only. Nothing is
+/// re-scored: the recovery, sleep, effort and steps are the values Noop banked for that day.
+@MainActor
+enum LoopPastDayReader {
+    /// How far back Home lets you swipe, today included.
+    static let span = 14
+
+    /// Day keys from the oldest to today, the order Home's pages run in.
+    static func keys(repo: Repository, now: Date = .now) -> [(key: String, date: Date)] {
+        let cal = Calendar.current
+        let logicalToday = Repository.logicalDay(now)
+        let todayKey = repo.today?.day ?? Repository.localDayKey(logicalToday)
+        return (0..<span).reversed().compactMap { back in
+            guard let d = cal.date(byAdding: .day, value: -back, to: logicalToday) else { return nil }
+            return (back == 0 ? todayKey : Repository.localDayKey(d), d)
+        }
+    }
+
+    static func read(repo: Repository, dayKeys: [String]) async -> [String: LoopToday] {
+        let rest = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
+        let stepsEst = await repo.exploreSeries(key: "steps_est", source: "my-whoop")
+        let banked = repo.days.compactMap(\.totalSleepMin).filter { $0 > 0 }
+        let meanNeed = max(450, banked.isEmpty ? 450 : banked.reduce(0, +) / Double(banked.count))
+
+        var out: [String: LoopToday] = [:]
+        for key in dayKeys {
+            var t = LoopToday()
+            let row = repo.days.last(where: { $0.day == key })
+            t.recovery = row?.recovery.map { .scored(Int($0.rounded())) } ?? .noData
+            if let asleep = row?.totalSleepMin, asleep > 0 { t.sleepMin = asleep }
+            t.sleepNeedMin = (repo.importedSleep[key]?.needMin).flatMap { $0 > 0 ? $0 : nil } ?? meanNeed
+            t.sleepScore = rest.last(where: { $0.day == key }).map { Int($0.value.rounded()) }
+            t.effort = row?.strain
+            t.steps = row?.steps ?? stepsEst.last(where: { $0.day == key }).map { Int($0.value.rounded()) }
+            out[key] = t
+        }
+        return out
+    }
+}

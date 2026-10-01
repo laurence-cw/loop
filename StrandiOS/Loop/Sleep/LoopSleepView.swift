@@ -249,10 +249,11 @@ struct LoopStagesCard: View {
         let total = max(stages.map(\.minutes).reduce(0, +), 1)
         return GeometryReader { geo in
             HStack(spacing: 3) {
-                ForEach(stages) { stage in
+                ForEach(Array(stages.enumerated()), id: \.element.id) { i, stage in
                     RoundedRectangle(cornerRadius: 4)
                         .fill(stage.colour)
                         .frame(width: max((geo.size.width - 6) * stage.minutes / total, 0))
+                        .loopBuildIn(i, from: .leading, stagger: 0.18)
                 }
             }
         }
@@ -368,6 +369,7 @@ struct LoopSleepWeekCard: View {
                                 Capsule()
                                     .fill(LoopColor.signal)
                                     .frame(width: 10, height: max(bottom - top, 10))
+                                    .loopBuildIn(i, from: .top)
                                     .offset(y: top)
                             } else if i < week.count {
                                 // A past night with nothing recorded: said plainly, never drawn as zero.
@@ -379,6 +381,7 @@ struct LoopSleepWeekCard: View {
                                     .padding(.vertical, 4)
                                     .background(LoopColor.surface)
                                     .frame(maxHeight: .infinity)
+                                    .loopBuildIn(i)
                             }
                         }
                         .frame(maxWidth: .infinity)

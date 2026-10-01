@@ -236,21 +236,26 @@ struct LoopRangeBar: View {
             let x: (Double) -> CGFloat = { v in CGFloat((min(max(v, lo), hi) - lo) / (hi - lo)) * w }
             ZStack(alignment: .leading) {
                 Capsule().fill(LoopColor.line).frame(height: 6)
+                    .loopBuildIn(0, from: .leading)
                 Capsule().fill(LoopColor.muted.opacity(0.45))
                     .frame(width: x(high) - x(low), height: 6)
+                    .loopBuildIn(1, from: .leading, stagger: 0.2)
                     .offset(x: x(low))
                 if value != nil {
                     Circle()
                         .fill(LoopColor.text)
                         .frame(width: 16, height: 16)
                         .overlay(Circle().stroke(LoopColor.surface, lineWidth: 3))
+                        .scaleEffect(shown == nil ? 0.001 : 1)
+                        .opacity(shown == nil ? 0 : 1)
                         .offset(x: x(shown ?? (low + high) / 2) - 8)
                 }
             }
             .frame(maxHeight: .infinity)
         }
         .accessibilityHidden(true)
-        .onAppear { settle() }
+        // The dot drops in and slides to tonight once the track has drawn, the first time it's seen.
+        .loopOnSeen(threshold: 0.5) { if shown == nil { settle() } }
         .onChange(of: value) { _, _ in settle() }
     }
 }
@@ -261,7 +266,7 @@ extension LoopRangeBar {
         if reduceMotion {
             shown = value
         } else {
-            DispatchQueue.main.async { withAnimation(LoopMotion.fill) { shown = value } }
+            withAnimation(LoopMotion.build.delay(0.45)) { shown = value }
         }
     }
 }

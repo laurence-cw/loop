@@ -9,6 +9,7 @@ struct LoopHomeView: View {
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var live: LiveState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @AppStorage(LoopPrefs.firstNameKey) private var firstName = ""
     /// Today, live. The section screens are always today and share this.
@@ -52,12 +53,12 @@ struct LoopHomeView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
+                        // The rows follow straight on from the sentence (or the pill) with one fixed gap,
+                        // rather than being pushed below the fold, which left a screen-high hole on a
+                        // shorter iPhone.
                         hero
-                            // At least one screen tall, so the rows always start below the fold; taller
-                            // when large text needs the room, rather than overflowing into the rows.
-                            .frame(minHeight: viewport.size.height)
                         rows
-                            .padding(.top, LoopSpace.xl)
+                            .padding(.top, LoopSpace.l)
                             .padding(.horizontal, LoopSpace.edge)
                             .padding(.bottom, LoopSpace.xl)
                             .id(Self.rowsAnchor)
@@ -160,9 +161,8 @@ struct LoopHomeView: View {
                     .padding(.top, LoopSpace.s)
             }
 
-            Spacer(minLength: LoopSpace.l)
-
             dayHeader
+                .padding(.top, LoopSpace.m)
                 .padding(.horizontal, LoopSpace.edge)
                 .padding(.bottom, LoopSpace.m)
 
@@ -193,8 +193,6 @@ struct LoopHomeView: View {
                     .padding(.top, LoopSpace.m)
                     .transition(.opacity)
             }
-
-            Spacer(minLength: LoopSpace.xl)
         }
     }
 
@@ -263,22 +261,27 @@ struct LoopHomeView: View {
         .padding(.horizontal, LoopSpace.l)
     }
 
-    /// Each arc's value at its outer foot, marked by its section's symbol.
-    /// Side by side at each foot when they fit; stacked (left value above right) at large text sizes.
+    /// Each arc's value at its outer foot, marked by its section's symbol: sleep under the left arc,
+    /// activity under the right, always on one line so the two read as a pair. Each shrinks a little
+    /// before it would wrap; only the accessibility text sizes stack them.
+    @ViewBuilder
     private func arcFeet(_ t: LoopToday) -> some View {
         let sleep = footValue(symbol: "moon.fill", colour: LoopColor.signal,
                               text: t.sleepMin.map { LoopFormat.duration($0 * 60) })
         let effort = footValue(symbol: "figure.walk", colour: LoopColor.pulse,
                                text: t.effort.map { "\(Int($0.rounded()))" }, unit: "/100")
-        return ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline, spacing: LoopSpace.l) {
-                sleep.fixedSize()
-                Spacer(minLength: LoopSpace.l)
-                effort.fixedSize()
-            }
-            VStack(spacing: LoopSpace.xs) {
-                sleep.frame(maxWidth: .infinity, alignment: .leading)
-                effort.frame(maxWidth: .infinity, alignment: .trailing)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: LoopSpace.xs) {
+                    sleep.frame(maxWidth: .infinity, alignment: .leading)
+                    effort.frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: LoopSpace.s) {
+                    sleep
+                    Spacer(minLength: LoopSpace.s)
+                    effort
+                }
             }
         }
         .accessibilityHidden(true)
@@ -293,10 +296,14 @@ struct LoopHomeView: View {
                 (Text(text).foregroundStyle(LoopColor.text)
                  + Text(unit ?? "").font(.footnote.weight(.medium)).foregroundStyle(LoopColor.muted))
                     .font(LoopFont.rowValue)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             } else {
                 Text("No data")
                     .font(LoopFont.rowValue)
                     .foregroundStyle(LoopColor.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
         }
     }
@@ -437,29 +444,33 @@ struct LoopSectionRow: View {
                 Text(title)
                     .font(LoopFont.rowTitle)
                     .foregroundStyle(LoopColor.text)
+                    // Never hyphenated across lines ("Re-cov-ery"); shrinks a touch at big text sizes.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(1)   // the title keeps its room; the value shrinks first
                 if let detail {
                     Text(detail)
                         .font(.footnote.monospacedDigit())
                         .foregroundStyle(LoopColor.muted)
                 }
             }
+            .layoutPriority(1)
             Spacer(minLength: LoopSpace.xs)
             HStack(alignment: .firstTextBaseline, spacing: LoopSpace.xs) {
                 if let value {
-                    if let word {
-                        Text(word)
-                            .font(LoopFont.rowValue)
-                            .foregroundStyle(colour)
-                    }
-                    Text(value)
+                    // One Text, so the word and the number shrink together and keep one baseline.
+                    (Text(word.map { "\($0) " } ?? "").foregroundStyle(colour)
+                     + Text(value).foregroundStyle(LoopColor.text))
                         .font(LoopFont.rowValue)
-                        .foregroundStyle(LoopColor.text)
                 } else {
                     Text("No data")
                         .font(LoopFont.rowValue)
                         .foregroundStyle(LoopColor.muted)
                 }
             }
+            // "Charged 84" stays on one line: shrink slightly rather than wrap.
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             if opens {
                 Image(systemName: "chevron.right")
                     .font(.footnote)

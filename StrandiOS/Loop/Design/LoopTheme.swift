@@ -93,8 +93,9 @@ enum LoopFont {
     static let sentence = Font.system(.title3, weight: .regular)
     /// Body: 17pt Regular.
     static let body = Font.system(.body)
-    /// Row and arc-foot values: 20pt (title3) Expanded Regular, monospaced digits.
-    static let rowValue = Font.system(.title3, weight: .regular).width(.expanded).monospacedDigit()
+    /// Row and arc-foot values: 17pt (body) Expanded Regular, monospaced digits. Body, not title3, so
+    /// "Charged 84" fits one line on a 390pt-wide iPhone (13 / 16e) at the default text size.
+    static let rowValue = Font.system(.body, weight: .regular).width(.expanded).monospacedDigit()
     /// Row titles ("Recovery"): body Regular.
     static let rowTitle = Font.system(.body, weight: .regular)
     /// Meta: second facts (a number under its bar, "Your normal 52–59", steps), units, the pill.

@@ -477,7 +477,8 @@ private struct iOSRootView: View {
             )
         }
         #endif
-        return AnyView(shell)
+        // Loop: the reskinned interface replaces Noop's tab shell (StrandiOS/Loop).
+        return AnyView(LoopRootView())
     }
 
     private var shell: some View {

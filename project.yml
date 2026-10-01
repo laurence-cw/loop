@@ -348,7 +348,8 @@ targets:
         # set is compiled into the bundle and is available to UIApplication.setAlternateIconName.
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         GENERATE_INFOPLIST_FILE: NO
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # Loop: iPhone only (both users are on iPhone; see PRODUCT.md). Upstream Noop ships "1,2".
+        TARGETED_DEVICE_FAMILY: "1"
         SWIFT_EMIT_LOC_STRINGS: YES
     dependencies:
       - package: WhoopProtocol
@@ -360,11 +361,8 @@ targets:
       - package: ZIPFoundation
       - package: PolarProtocol
       - target: NOOPiOSWidgets
-      # Embed the watchOS app so the iPhone app carries it (NOOP.app/Watch/NOOPWatch.app). A watch app
-      # installs by riding inside its iOS companion; without this it would never reach a paired watch.
-      # Build-from-source delivers it for certain; sideload install of the embedded watch app under a free
-      # Apple ID is unproven (an Apple limitation), so the docs steer watch users to a source build for now.
-      - target: NOOPWatch
+      # Loop: the watchOS app is no longer embedded in the iPhone app (cut from Loop, see
+      # docs/loop/screen-inventory.md). The NOOPWatch target itself is left in place so upstream merges stay clean.
 
   # WidgetKit + Live Activity extension — the iOS analogue of the macOS menu-bar
   # extra. Reads a tiny snapshot the app publishes into the shared App Group.

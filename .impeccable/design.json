@@ -1,0 +1,372 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-01T07:48:00+00:00",
+  "title": "Design System: Loop",
+  "extensions": {
+    "scope": "Loop only (StrandiOS/Loop, tokens in Design/LoopTheme.swift). Noop's Packages/StrandDesign is a separate, unrelated system.",
+    "colorMeta": {
+      "night": {
+        "role": "neutral",
+        "displayName": "Night",
+        "canonical": "#07070A",
+        "tonalRamp": [
+          "#1F1F2D",
+          "#37374E",
+          "#4E4E6F",
+          "#656590",
+          "#8787AB",
+          "#A8A8C2",
+          "#CCCCDB",
+          "#F0F0F4"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#121217",
+        "tonalRamp": [
+          "#22222B",
+          "#3A3A4A",
+          "#53536A",
+          "#6B6B89",
+          "#8D8DA5",
+          "#ACACBE",
+          "#CECED9",
+          "#F1F1F4"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "#24242C",
+        "tonalRamp": [
+          "#22222A",
+          "#3C3C49",
+          "#555568",
+          "#6E6E87",
+          "#8F8FA3",
+          "#AEAEBC",
+          "#CFCFD8",
+          "#F1F1F4"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Text",
+        "canonical": "#F2F2F5",
+        "tonalRamp": [
+          "#21212B",
+          "#3A3A4B",
+          "#52526B",
+          "#6A6A8A",
+          "#8C8CA6",
+          "#ABABBF",
+          "#CECED9",
+          "#F1F1F4"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "#9A9AA6",
+        "tonalRamp": [
+          "#242429",
+          "#3E3E46",
+          "#585864",
+          "#737382",
+          "#93939F",
+          "#B0B0BA",
+          "#D1D1D6",
+          "#F1F1F3"
+        ]
+      },
+      "signal": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "#4A63FF",
+        "tonalRamp": [
+          "#000B4C",
+          "#001285",
+          "#001ABD",
+          "#0022F5",
+          "#334FFF",
+          "#6B80FF",
+          "#A8B4FF",
+          "#E5E9FF"
+        ]
+      },
+      "pulse": {
+        "role": "primary",
+        "displayName": "Pulse Magenta",
+        "canonical": "#E0379A",
+        "tonalRamp": [
+          "#420A2B",
+          "#73124B",
+          "#A3196A",
+          "#D4218A",
+          "#E44EA6",
+          "#EB7FBE",
+          "#F3B4D9",
+          "#FCE9F4"
+        ]
+      },
+      "charged": {
+        "role": "secondary",
+        "displayName": "Charged Teal",
+        "canonical": "#2EC4A6",
+        "tonalRamp": [
+          "#0F3E34",
+          "#196B5B",
+          "#249981",
+          "#2FC6A8",
+          "#5AD8BF",
+          "#87E3D1",
+          "#B9EFE4",
+          "#EAFAF7"
+        ]
+      },
+      "steady": {
+        "role": "secondary",
+        "displayName": "Steady Amber",
+        "canonical": "#F2A93B",
+        "tonalRamp": [
+          "#482D05",
+          "#7C4E08",
+          "#B16F0C",
+          "#E6900F",
+          "#F2AB40",
+          "#F6C274",
+          "#FADBAE",
+          "#FDF5E7"
+        ]
+      },
+      "low": {
+        "role": "secondary",
+        "displayName": "Low Coral",
+        "canonical": "#FF6A55",
+        "tonalRamp": [
+          "#4C0900",
+          "#851000",
+          "#BD1700",
+          "#F51E00",
+          "#FF4C33",
+          "#FF7D6B",
+          "#FFB3A8",
+          "#FFE9E5"
+        ]
+      },
+      "glow": {
+        "role": "tertiary",
+        "displayName": "Glow Violet",
+        "canonical": "#7B45F0",
+        "tonalRamp": [
+          "#1A0647",
+          "#2E0A7B",
+          "#410EAF",
+          "#5412E3",
+          "#7942F0",
+          "#9E76F4",
+          "#C6AFF9",
+          "#EEE7FD"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "hero": {
+        "displayName": "Hero",
+        "purpose": "Single Recovery score in the orb; one per screen."
+      },
+      "headline-number": {
+        "displayName": "Headline Number",
+        "purpose": "Secondary big figure, e.g. the learning-orb nights count."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Screen and sheet titles."
+      },
+      "orb-word": {
+        "displayName": "Orb Word",
+        "purpose": "Recovery word under the hero, in band colour."
+      },
+      "sentence": {
+        "displayName": "Sentence",
+        "purpose": "The one sentence: greeting by name plus what today means."
+      },
+      "row-value": {
+        "displayName": "Row Value",
+        "purpose": "Row values, score words and arc-foot values."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Explanations, checklist lines; Regular for row titles."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Status pill text, units, second facts like steps."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-edge-glow",
+        "value": "radial-gradient(140px at leading edge, <section colour> 15% -> clear)",
+        "purpose": "One section colour per card, from its leading edge (LoopGlow.soft 0.15)."
+      },
+      {
+        "name": "orb-halo",
+        "value": "circle 1.18x orb, tint 25%, blur 0.16x orb diameter",
+        "purpose": "Only behind the orb (LoopGlow.strong 0.25)."
+      },
+      {
+        "name": "orb-face-and-rim",
+        "value": "radial tint 25% -> 0 over 0.55x diameter on Surface; 1pt rim at 25%",
+        "purpose": "Orb face tint; colour cross-fades on Recovery change."
+      }
+    ],
+    "motion": [
+      {
+        "name": "fill",
+        "value": "easeOut 0.8s",
+        "purpose": "Arcs and learning ring fill once on open; ease to later values. Off under Reduce Motion."
+      },
+      {
+        "name": "colour-fade",
+        "value": "easeInOut 0.6s",
+        "purpose": "Recovery colour and status pill changes: a cross-fade, never a flash."
+      },
+      {
+        "name": "breath",
+        "value": "scale 1.0 -> 1.015, 4s period (easeInOut 2s, autoreverse)",
+        "purpose": "Orb breath. Frozen under Reduce Motion."
+      }
+    ],
+    "shapes": [
+      {
+        "name": "arc-stroke",
+        "value": "10pt, round cap",
+        "purpose": "Sleep and Activity arcs over a Line track; 16 degree gap top and bottom."
+      },
+      {
+        "name": "orb",
+        "value": "58% of ring diameter",
+        "purpose": "Recovery orb."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Section Row",
+      "kind": "card",
+      "refersTo": "section-row",
+      "description": "One Surface card per section below the fold; section colour glows in from the leading edge; word and number share a baseline.",
+      "html": "<div class=\"ds-row\"><svg class=\"ds-row-ic\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\"><path fill=\"#F2A93B\" d=\"M13 2 4 14h7l-1 8 9-12h-7z\"/></svg><span class=\"ds-row-title\">Recovery</span><span class=\"ds-row-val\"><span class=\"ds-row-word\">Steady</span><span>58</span></span></div>",
+      "css": ".ds-row{display:flex;align-items:center;gap:16px;min-height:72px;padding:20px;border-radius:24px;background:radial-gradient(140px circle at 0 50%,rgba(242,169,59,.15),transparent) ,#121217;color:#F2F2F5;font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;}.ds-row-ic{width:24px;flex:none}.ds-row-title{font-size:17px;font-weight:400;flex:1}.ds-row-val{display:flex;gap:8px;align-items:baseline;font-size:20px;font-weight:400;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;font-stretch:expanded;font-variant-numeric:tabular-nums;}.ds-row-word{color:#F2A93B}"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Small Surface capsule under the safe area; Muted at rest, Text plus chevron when it needs help. Never Recovery colours.",
+      "html": "<button class=\"ds-pill\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"none\" stroke=\"#F2F2F5\" stroke-width=\"2\"/><path d=\"M12 7v6M12 16.5v.5\" stroke=\"#F2F2F5\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg>Can't find your strap<span class=\"ds-pill-chev\">&#8250;</span></button>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:none;border-radius:9999px;background:#121217;color:#F2F2F5;font-size:13px;font-weight:500;font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;cursor:pointer;transition:opacity .6s ease-in-out}.ds-pill:focus-visible{outline:2px solid #9A9AA6;outline-offset:2px}.ds-pill:active{opacity:.8}.ds-pill-chev{color:#9A9AA6;font-weight:700}.ds-pill[disabled]{color:#9A9AA6;cursor:default}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width Text capsule with Night label; one per card or sheet.",
+      "html": "<button class=\"ds-btn\">Find my strap</button>",
+      "css": ".ds-btn{width:100%;min-height:50px;border:none;border-radius:9999px;background:#F2F2F5;color:#07070A;font-size:17px;font-weight:600;font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;cursor:pointer}.ds-btn:active{opacity:.85}.ds-btn:focus-visible{outline:2px solid #9A9AA6;outline-offset:3px}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat Surface card, 24pt continuous corners, no border, never nested.",
+      "html": "<div class=\"ds-card\"><p>Bluetooth is off, so Loop can't reach your strap.</p><button class=\"ds-card-btn\">Open Settings</button></div>",
+      "css": ".ds-card{display:flex;flex-direction:column;gap:16px;padding:20px;border-radius:24px;background:#121217;color:#F2F2F5;font-size:17px;font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;}.ds-card p{margin:0}.ds-card-btn{min-height:44px;border:none;border-radius:9999px;background:#F2F2F5;color:#07070A;font-size:17px;font-weight:600;cursor:pointer}.ds-card-btn:focus-visible{outline:2px solid #9A9AA6;outline-offset:3px}"
+    },
+    {
+      "name": "Loop Ring",
+      "kind": "custom",
+      "refersTo": "loop-ring",
+      "description": "Signature: Sleep arc fills up the left, Activity arc spends down the right, Recovery orb glows the colour of what's left.",
+      "html": "<div class=\"ds-ring\"><svg viewBox=\"0 0 300 300\" width=\"300\" height=\"300\"><g fill=\"none\" stroke-width=\"10\" stroke-linecap=\"round\"><path d=\"M160.1 289.6A140 140 0 0 1 160.1 10.4\" stroke=\"#24242C\" transform=\"scale(-1 1) translate(-300 0)\"/><path class=\"ds-arc\" d=\"M139.9 289.6A140 140 0 0 1 139.9 10.4\" stroke=\"#4A63FF\"/><path d=\"M160.1 10.4A140 140 0 0 1 160.1 289.6\" stroke=\"#24242C\"/><path class=\"ds-arc\" d=\"M160.1 10.4A140 140 0 0 1 283 185\" stroke=\"#E0379A\"/></g></svg><div class=\"ds-orb\"><span class=\"ds-orb-n\">58</span><span class=\"ds-orb-w\">Steady</span></div></div>",
+      "css": ".ds-ring{position:relative;width:300px;height:300px;background:#07070A}.ds-arc{stroke-dasharray:440;stroke-dashoffset:440;animation:ds-fill .8s ease-out forwards}.ds-orb{position:absolute;left:50%;top:50%;width:174px;height:174px;margin:-87px 0 0 -87px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle,rgba(242,169,59,.25),rgba(242,169,59,0) 55%),#121217;box-shadow:0 0 0 1px rgba(242,169,59,.25),0 0 28px 16px rgba(242,169,59,.25);animation:ds-breathe 4s ease-in-out infinite}.ds-orb-n{color:#F2F2F5;font-size:72px;font-weight:300;line-height:1;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;font-stretch:expanded;font-variant-numeric:tabular-nums;}.ds-orb-w{color:#F2A93B;font-size:22px;font-weight:400;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;font-stretch:expanded;font-variant-numeric:tabular-nums;}@keyframes ds-fill{to{stroke-dashoffset:0}}@keyframes ds-breathe{50%{transform:scale(1.015)}}@media (prefers-reduced-motion:reduce){.ds-arc{animation:none;stroke-dashoffset:0}.ds-orb{animation:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Black with Light",
+    "overview": "Loop is a near-black night with a few lit things on it. The light means something. Sleep is always blue, Activity is always magenta, and Recovery is the only thing that changes colour: teal, amber or coral, depending on what is left today. The signature is the loop drawn literally. Two round-capped arcs close a ring around a softly glowing orb. Sleep fills the left side from the bottom up, Activity spends the right side from the top down, and the orb holds the Recovery score and its word.\n\nDensity is low and glanceable. Each screen has one hero number, one plain sentence, and quiet supporting facts. Depth comes from tone and coloured light, not from shadows or borders. Surfaces are flat Surface cards on Night, and glow sits only behind the orb or bleeds in from a card's edge, light enough that you notice it on a second look. Type is SF Pro Expanded for numbers and headings and plain SF Pro for words. Every figure uses monospaced digits, and every number comes with a word.",
+    "keyCharacteristics": [
+      "Near-black Night ground with one flat Surface card family.",
+      "Fixed meaning per colour: Signal is Sleep, Pulse is Activity, and only Recovery shifts between Charged, Steady and Low.",
+      "The loop ring as the one hero: two 10pt round-capped arcs around a glowing orb.",
+      "Glow at 15–25% opacity, only behind the orb or at a card's edge, one colour per card.",
+      "SF Pro Expanded with monospaced digits for numbers; SF Pro for sentences.",
+      "Motion that happens once and slowly: arcs fill once, the orb breathes, colour cross-fades."
+    ],
+    "rules": [
+      {
+        "name": "The Only-Recovery-Changes Rule",
+        "body": "Recovery is the only thing in Loop that changes colour. Signal is always Sleep and Pulse is always Activity. Status, chrome and controls never borrow Charged, Steady or Low.",
+        "section": "colors"
+      },
+      {
+        "name": "The Word-Beside-Colour Rule",
+        "body": "A Recovery colour never appears without its word (Charged / Steady / Low). Colour alone never carries a state.",
+        "section": "colors"
+      },
+      {
+        "name": "The Large-Colour-Text Rule",
+        "body": "Coloured text only appears at row-value size (20pt Expanded Regular) or larger. Signal is 4.0:1 on Surface, so body-size text stays Text or Muted. Glow is never text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Expanded-for-Numbers Rule",
+        "body": "Numbers and headings use SF Pro Expanded with monospaced digits. Sentences use SF Pro. Never set a sentence in Expanded.",
+        "section": "typography"
+      },
+      {
+        "name": "The Word-and-Number Baseline Rule",
+        "body": "A score's word and its figure share one baseline at row-value size (\"Steady 58\"), with the word in the section's colour and the figure in Text.",
+        "section": "typography"
+      },
+      {
+        "name": "The One-Hero Rule",
+        "body": "Only one hero-size number per screen.",
+        "section": "typography"
+      },
+      {
+        "name": "The Light-Not-Shadow Rule",
+        "body": "Depth is coloured light at 15–25% opacity, never black shadows. It sits only behind the orb or at a card's edge, one colour per card.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Blur-Is-For-The-Orb Rule",
+        "body": "The orb halo is Loop's one blur. Cards are never frosted or glassy.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do take every colour, size and duration from `LoopTheme.swift`, and only from there.",
+      "Do pair every score with its word: Charged / Steady / Low for Recovery, Great / Good / OK / Low for Sleep and Effort.",
+      "Do keep one hero number per screen, at 72pt Expanded Light with monospaced digits.",
+      "Do mark each section with its one SF Symbol: bolt.fill for Recovery, moon.fill for Sleep, figure.walk for Activity.",
+      "Do keep glow at 15% (card edge) or 25% (orb), one colour per card.",
+      "Do show missing data as \"No data\" or \"No score\" in Muted, never as zero.",
+      "Do respect Reduce Motion: freeze the orb breath and arc fills.",
+      "Do keep touch targets at least 44pt tall."
+    ],
+    "donts": [
+      "Don't use StrandDesign tokens (StrandPalette, StrandFont) on Loop screens.",
+      "Don't give Charged, Steady or Low to anything but Recovery, including the status pill.",
+      "Don't build grids of equal tiles or rows of three equal rings.",
+      "Don't put gradients on text or buttons, or frost cards with blur.",
+      "Don't make text glow, or set Glow Violet as text.",
+      "Don't add borders to cards or nest cards.",
+      "Don't use black drop shadows.",
+      "Don't add uppercase tracked eyebrow labels above values. A section is marked by its SF Symbol."
+    ]
+  }
+}

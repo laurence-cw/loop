@@ -15,7 +15,9 @@ enum LoopStatus: Equatable {
     @MainActor
     static func resolve(live: LiveState, hasStrap: Bool, now: Date = .now) -> LoopStatus {
         if live.lastSyncError?.hasPrefix("Bluetooth is off") == true { return .bluetoothOff }
-        guard hasStrap else { return .noStrap }
+        // Setup's "Pair later": name the next step, not a fault, until a strap bonds.
+        let pairLater = UserDefaults.standard.bool(forKey: LoopPrefs.pairLaterKey)
+        guard hasStrap, !(pairLater && !live.bonded) else { return .noStrap }
         if live.backfilling { return .syncing }
         let last = live.lastSyncedAt.map { Date(timeIntervalSince1970: $0) }
         if live.connected, let last { return .synced(last) }
@@ -29,7 +31,7 @@ enum LoopStatus: Equatable {
         case .synced(let d): return "Synced \(LoopFormat.clock(d))"
         case .cantFind: return "Can't find your strap"
         case .bluetoothOff: return "Bluetooth is off"
-        case .noStrap: return "No strap paired"
+        case .noStrap: return "Pair your strap"
         }
     }
 

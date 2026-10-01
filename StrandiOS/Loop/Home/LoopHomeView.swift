@@ -374,7 +374,9 @@ struct LoopStatusPill: View {
             ProgressView().controlSize(.mini).tint(LoopColor.muted)
         case .synced:
             Image(systemName: "checkmark.circle").font(.footnote).foregroundStyle(LoopColor.muted)
-        case .cantFind, .bluetoothOff, .noStrap:
+        case .noStrap:
+            Image(systemName: "plus.circle").font(.footnote).foregroundStyle(LoopColor.text)
+        case .cantFind, .bluetoothOff:
             Image(systemName: "exclamationmark.circle").font(.footnote).foregroundStyle(LoopColor.text)
         }
     }
@@ -414,7 +416,7 @@ struct LoopFindStrapSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: LoopSpace.m) {
             VStack(alignment: .leading, spacing: LoopSpace.xs) {
-                Text("Can't find your strap")
+                Text(status.text)
                     .font(LoopFont.title)
                     .foregroundStyle(LoopColor.text)
                 if case .cantFind(let last?) = status {

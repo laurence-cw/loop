@@ -27,7 +27,16 @@ struct LoopActivity: Equatable {
         let day: String
         let effort: Double?
         let steps: Int?
+        var kcal: Double? = nil
     }
+
+    /// Minutes in each of Noop's five heart-rate zones today, zone 1 first.
+    var zoneMinutes: [Double] = []
+    /// Each zone's lower edge in bpm, zone 1 first, and the max heart rate they come from.
+    var zoneFloors: [Int] = []
+    var maxHR: Int?
+    /// Noop's whole-day calorie estimate from heart rate, nil until there's enough of the day.
+    var kcalToday: Double?
 
     var hours: [Hour] = []
     var workouts: [Workout] = []
@@ -49,6 +58,8 @@ struct LoopActivity: Equatable {
 enum LoopActivityReader {
     static let firstHour = 6
     static let lastHour = 23
+
+    static func kcal(_ v: Double?) -> Double? { v.flatMap { $0 >= 100 ? $0 : nil } }
 
     static func read(repo: Repository, profile: ProfileStore, today: LoopToday) async -> LoopActivity {
         var out = LoopActivity()
@@ -81,6 +92,19 @@ enum LoopActivityReader {
             out.hours.append(.init(hour: h, added: added, future: false))
         }
 
+        // Heart-rate zones: Noop's %HRmax model from the wearer's age (or Noop's max-HR override).
+        let zoneSet = HRZones.zones(age: Double(profile.age),
+                                    maxHROverride: profile.hrMaxOverride > 0 ? Double(profile.hrMaxOverride) : nil)
+        if !hr.isEmpty {
+            out.zoneMinutes = HRZones.timeInZone(hr, zoneSet: zoneSet).seconds.map { $0 / 60 }
+        }
+        out.zoneFloors = zoneSet.zones.map { Int($0.lower.rounded()) }
+        out.maxHR = Int(zoneSet.maxHR.rounded())
+
+        // Calories: Noop's stored estimate. A figure under 100 kcal is a day barely begun or a partial
+        // write, not a reading worth showing.
+        out.kcalToday = LoopActivityReader.kcal(day?.activeKcalEst)
+
         // Today's workouts, detected or recorded, oldest first.
         let rows = await repo.workoutRows(days: 2)
         out.workouts = rows
@@ -102,11 +126,11 @@ enum LoopActivityReader {
             guard let d = cal.date(byAdding: .day, value: offset, to: weekStart), d <= logicalToday else { break }
             let key = Repository.localDayKey(d)
             if key == todayKey {
-                out.week.append(.init(day: key, effort: today.effort, steps: today.steps))
+                out.week.append(.init(day: key, effort: today.effort, steps: today.steps, kcal: out.kcalToday))
             } else {
                 let row = repo.days.last(where: { $0.day == key })
                 let steps = row?.steps ?? stepsEst.last(where: { $0.day == key }).map { Int($0.value.rounded()) }
-                out.week.append(.init(day: key, effort: row?.strain, steps: steps))
+                out.week.append(.init(day: key, effort: row?.strain, steps: steps, kcal: kcal(row?.activeKcalEst)))
             }
         }
         return out

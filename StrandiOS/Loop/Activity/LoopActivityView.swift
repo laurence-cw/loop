@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Activity, one tap in from Home. Headline: today's effort and steps. Then effort through the day
-/// with its peaks, and today's activities. Then effort and steps across the week.
+/// with its peaks, heart-rate zones, today's activities, calories burned, and the week.
 struct LoopActivityView: View {
     @Binding var today: LoopToday
 
@@ -71,10 +71,23 @@ struct LoopActivityView: View {
     /// Shown only once read, so real data never flashes as "No data" first.
     private var detail: some View {
         VStack(alignment: .leading, spacing: 0) {
+            #if DEBUG
+            if CommandLine.arguments.contains("--loop-preview-lower-cards") {
+                LoopZonesCard(minutes: activity.zoneMinutes, floors: activity.zoneFloors, maxHR: activity.maxHR)
+                    .padding(.top, LoopSpace.l)
+                LoopCaloriesCard(today: activity.kcalToday, week: activity.week).padding(.top, LoopSpace.s)
+            }
+            #endif
             LoopDayEffortCard(hours: activity.hours)
                 .padding(.top, LoopSpace.l)
 
+            LoopZonesCard(minutes: activity.zoneMinutes, floors: activity.zoneFloors, maxHR: activity.maxHR)
+                .padding(.top, LoopSpace.s)
+
             LoopWorkoutsList(workouts: activity.workouts)
+                .padding(.top, LoopSpace.xl)
+
+            LoopCaloriesCard(today: activity.kcalToday, week: activity.week)
                 .padding(.top, LoopSpace.xl)
 
             LoopActivityWeekCard(week: activity.week)
@@ -397,11 +410,15 @@ extension LoopActivity {
             LoopActivity.Workout(id: "fb", name: "Football", start: start + 12 * 3600 + 20 * 60, minutes: 40, effort: 44),
         ].filter { $0.start + $0.minutes * 60 <= now }
         a.week = [
-            .init(day: "mon", effort: 48, steps: 11_204),
-            .init(day: "tue", effort: 35, steps: 8_930),
-            .init(day: "wed", effort: nil, steps: nil),
-            .init(day: "thu", effort: 58, steps: 13_277),
+            .init(day: "mon", effort: 48, steps: 11_204, kcal: 2_310),
+            .init(day: "tue", effort: 35, steps: 8_930, kcal: 2_020),
+            .init(day: "wed", effort: nil, steps: nil, kcal: nil),
+            .init(day: "thu", effort: 58, steps: 13_277, kcal: 1_840),
         ]
+        a.zoneMinutes = [212, 96, 41, 22, 6]
+        a.zoneFloors = [100, 120, 140, 160, 180]
+        a.maxHR = 199
+        a.kcalToday = 1_840
         return a
     }
 }

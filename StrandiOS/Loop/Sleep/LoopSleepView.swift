@@ -11,7 +11,6 @@ struct LoopSleepView: View {
     @State private var loaded = false
     @State private var titleScrolledAway = false
 
-    private var isWhoop5: Bool { LoopStrap.isWhoop5(model: model) }
 
     var body: some View {
         ScrollView {
@@ -56,9 +55,9 @@ struct LoopSleepView: View {
         .modifier(LoopSoftTopEdge())
         .tint(LoopColor.text)
         .task(id: repo.refreshSeq) {
-            sleep = await LoopSleepReader.read(repo: repo, today: today, isWhoop5: isWhoop5)
+            sleep = await LoopSleepReader.read(repo: repo, today: today)
             #if DEBUG
-            if CommandLine.arguments.contains("--loop-preview-whoop5") { sleep.unreliableStages = true }
+            if CommandLine.arguments.contains("--loop-preview-questionable-stages") { sleep.stagesQuestionable = true }
             if CommandLine.arguments.contains("--loop-preview-missing-night"), sleep.week.count > 1 {
                 sleep.week[1] = .init(day: sleep.week[1].day, bed: nil, wake: nil)
             }
@@ -208,11 +207,7 @@ struct LoopStagesCard: View {
                 .font(LoopFont.rowTitle)
                 .foregroundStyle(LoopColor.muted)
 
-            if sleep.unreliableStages {
-                Text("Not reliable on this strap yet.")
-                    .font(LoopFont.explainer)
-                    .foregroundStyle(LoopColor.muted)
-            } else if sleep.hasStages {
+            if sleep.hasStages {
                 bar
                 VStack(spacing: LoopSpace.s) {
                     ForEach(stages) { stage in
@@ -221,9 +216,10 @@ struct LoopStagesCard: View {
                                 .fill(stage.colour)
                                 .frame(width: 12, height: 12)
                             VStack(alignment: .leading, spacing: 2) {
+                                // Red names: Noop has its own doubts about how last night was split.
                                 Text(stage.id)
                                     .font(LoopFont.rowTitle)
-                                    .foregroundStyle(LoopColor.text)
+                                    .foregroundStyle(sleep.stagesQuestionable ? LoopColor.low : LoopColor.text)
                                 Text(stage.explainer)
                                     .font(LoopFont.explainer)
                                     .foregroundStyle(LoopColor.muted)
@@ -235,6 +231,7 @@ struct LoopStagesCard: View {
                                 .foregroundStyle(LoopColor.text)
                         }
                         .accessibilityElement(children: .combine)
+                        .accessibilityHint(sleep.stagesQuestionable ? "This split may be off tonight." : "")
                     }
                 }
             } else {

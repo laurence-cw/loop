@@ -26,8 +26,10 @@ struct LoopSleep: Equatable {
     var wake: Int?
     /// Monday to Sunday of the current week. Days still to come are omitted.
     var week: [Night] = []
-    /// Stages are not reliable on a WHOOP 5.0 / MG yet.
-    var unreliableStages = false
+    /// Noop has its own doubts about last night's staging (sparse motion on a short night, a split
+    /// built from heart rate alone, or too little deep and dream sleep for the night's quality).
+    /// Loop flags it gently; it never hides the numbers.
+    var stagesQuestionable = false
 
     static let empty = LoopSleep()
 
@@ -36,9 +38,8 @@ struct LoopSleep: Equatable {
 
 @MainActor
 enum LoopSleepReader {
-    static func read(repo: Repository, today: LoopToday, isWhoop5: Bool) async -> LoopSleep {
+    static func read(repo: Repository, today: LoopToday) async -> LoopSleep {
         var out = LoopSleep()
-        out.unreliableStages = isWhoop5
         out.asleepMin = today.sleepMin
         out.needMin = today.sleepNeedMin
         out.score = today.sleepScore
@@ -62,6 +63,22 @@ enum LoopSleepReader {
         if let span = span(endingOn: logicalToday, sleeps: repo.sleeps, midsleep: midsleep, cal: cal) {
             out.bed = span.start
             out.wake = span.end
+        }
+
+        // Noop's own per-night staging gates, asked of last night's main-night group.
+        if let asleep = day?.totalSleepMin, asleep > 0 {
+            let start = Int(cal.startOfDay(for: logicalToday).timeIntervalSince1970)
+            let candidates = repo.sleeps.filter { $0.endTs > start && $0.endTs <= start + 86_400 }
+            let group = SleepView.mainNightGroup(candidates, habitualMidsleepSec: midsleep)
+            let sparse = SleepView.stageSparseNoteApplies(stagingSparse: group.contains { $0.stagingSparse == true },
+                                                          asleepMin: asleep)
+            var lowConfidence = false
+            if var e = day?.efficiency, e > 0 {
+                if e > 1.5 { e /= 100 }
+                lowConfidence = SleepView.isStagingLowConfidence(asleepMin: asleep, deepMin: day?.deepMin ?? 0,
+                                                                 remMin: day?.remMin ?? 0, efficiency: e)
+            }
+            out.stagesQuestionable = sparse || lowConfidence || day?.sleepHrOnly == true
         }
 
         // This week, Monday first.

@@ -11,7 +11,6 @@ struct LoopRecoveryView: View {
     @State private var loaded = false
     @State private var titleScrolledAway = false
 
-    private var isWhoop5: Bool { LoopStrap.isWhoop5(model: model) }
 
     private var tint: Color {
         today.recovery.score.map { RecoveryBand(score: $0).colour } ?? LoopColor.muted
@@ -61,10 +60,7 @@ struct LoopRecoveryView: View {
         .modifier(LoopSoftTopEdge())
         .tint(LoopColor.text)
         .task(id: repo.refreshSeq) {
-            recovery = LoopRecoveryReader.read(repo: repo, isWhoop5: isWhoop5)
-            #if DEBUG
-            if CommandLine.arguments.contains("--loop-preview-whoop5") { recovery.unreliableOnStrap = true }
-            #endif
+            recovery = LoopRecoveryReader.read(repo: repo)
             withAnimation(.easeOut(duration: 0.3)) { loaded = true }
         }
     }
@@ -77,14 +73,12 @@ struct LoopRecoveryView: View {
                         title: "Heart variability",
                         explainer: "Higher than normal usually means your body has recovered well.",
                         vital: recovery.heartVariability,
-                        glow: tint,
-                        unreliable: recovery.unreliableOnStrap)
+                        glow: tint)
                     LoopVitalCard(
                         title: "Resting heart rate",
                         explainer: "Lower than normal is usually a good sign.",
                         vital: recovery.restingHeartRate,
-                        glow: tint,
-                        unreliable: false)
+                        glow: tint)
                 }
                 .padding(.top, LoopSpace.l)
 
@@ -124,7 +118,6 @@ struct LoopRecoveryView: View {
     }
 
     private var breathingState: LoopCheckRow.State {
-        if recovery.unreliableOnStrap { return .unreliable }
         guard let reading = recovery.breathing.reading else {
             return recovery.breathing.value == nil ? .noData : .learning
         }
@@ -145,7 +138,6 @@ struct LoopVitalCard: View {
     let explainer: String
     let vital: LoopVital
     let glow: Color
-    let unreliable: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: LoopSpace.s) {
@@ -153,18 +145,12 @@ struct LoopVitalCard: View {
                 Text(title)
                     .font(LoopFont.rowTitle)
                     .foregroundStyle(LoopColor.muted)
-                if !unreliable {
-                    Text(word)
+                Text(word)
                         .font(LoopFont.rowValue)
                         .foregroundStyle(vital.reading == nil ? LoopColor.muted : LoopColor.text)
-                }
             }
 
-            if unreliable {
-                Text("Not reliable on this strap yet.")
-                    .font(LoopFont.explainer)
-                    .foregroundStyle(LoopColor.muted)
-            } else if let low = vital.normalLow, let high = vital.normalHigh {
+            if let low = vital.normalLow, let high = vital.normalHigh {
                 VStack(spacing: LoopSpace.xs) {
                     LoopRangeBar(value: vital.value, low: low, high: high)
                         .frame(height: 16)
@@ -184,12 +170,10 @@ struct LoopVitalCard: View {
                     .foregroundStyle(LoopColor.muted)
             }
 
-            if !unreliable {
-                Text(explainer)
-                    .font(LoopFont.explainer)
-                    .foregroundStyle(LoopColor.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(explainer)
+                .font(LoopFont.explainer)
+                .foregroundStyle(LoopColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(LoopSpace.cardPadding)
@@ -258,7 +242,7 @@ extension LoopRangeBar {
 
 /// "Normal / a bit off" for the deeper measures. A quiet line, not a card.
 struct LoopCheckRow: View {
-    enum State { case normal, off, learning, noData, unreliable }
+    enum State { case normal, off, learning, noData }
 
     let title: String
     let explainer: String
@@ -273,13 +257,11 @@ struct LoopCheckRow: View {
                     .font(LoopFont.rowTitle)
                     .foregroundStyle(LoopColor.text)
                 Spacer(minLength: LoopSpace.xs)
-                if state != .unreliable {
-                    Text(word)
-                        .font(LoopFont.rowValue)
-                        .foregroundStyle(state == .normal || state == .off ? LoopColor.text : LoopColor.muted)
-                }
+                Text(word)
+                    .font(LoopFont.rowValue)
+                    .foregroundStyle(state == .normal || state == .off ? LoopColor.text : LoopColor.muted)
             }
-            Text(state == .unreliable ? "Not reliable on this strap yet." : explainer)
+            Text(explainer)
                 .font(LoopFont.explainer)
                 .foregroundStyle(LoopColor.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -296,7 +278,6 @@ struct LoopCheckRow: View {
         case .off: return "A bit off"
         case .learning: return "Learning"
         case .noData: return "No data"
-        case .unreliable: return ""
         }
     }
 }

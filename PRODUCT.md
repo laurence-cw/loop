@@ -26,7 +26,7 @@ The organising idea is the loop itself: sleep fills the tank, activity spends it
 - **Settings.** Sleep times (school nights and weekends), the strap, first name, age, a few notification switches, and an Advanced area.
 - **Screen inventory.** Approved 2026-09-30 in `docs/loop/screen-inventory.md`. Most of Noop is cut from view: Trends, Coach, More, imports, Test Centre, Apple Health, Watch app, widgets, warnings and nudges. There is no terms screen.
 - **Scores.** One scale, 0–100 everywhere (Effort included). Every score carries a word: Recovery Charged 67–100, Steady 34–66, Low 0–33; Sleep and Effort use Great / Good / OK / Low.
-- **5.0 strap.** Sleep stages, heart variability and breathing rate aren't reliable yet, and it gives no blood oxygen. Loop shows "Not reliable on this strap yet" rather than a confident number. On a 5.0, the wake-up alarm depends on Noop's experimental "Protocol probes" switch.
+- **Reliability (owner's rule, 2026-10-01).** Loop shows the data it has. It flags something only when Noop itself detects a problem with that specific night: for sleep stages, Noop's sparse-motion, heart-rate-only and low-confidence staging gates. A doubtful night's stage names turn red (Low); the numbers stay. A general belief about a strap model is never shown, so there is no blanket "Not reliable on this strap yet". The 5.0 gives no blood oxygen. On a 5.0, the wake-up alarm depends on Noop's experimental "Protocol probes" switch.
 - **Honest states.**
   - First nights (Noop calibrates over four, `Baselines.minNightsSeed`): "Getting to know you".
   - Missing days are shown as missing, never as zero or smoothed over.
@@ -72,7 +72,7 @@ Real strap data from the boys' own WHOOP 4.0 and 5.0 once they're paired. There 
 ## Product Principles
 1. Every screen has to answer "where am I in the loop today?". If it doesn't, it goes.
 2. Words before numbers: a sentence and a word first, then the figure for the curious.
-3. Honest over impressive. Gaps, estimates and unreliable metrics are named plainly.
+3. Honest over impressive. Gaps and estimates are named plainly. A night is flagged only when Noop actually detects a problem with it, never on a guess.
 4. It informs, it doesn't nag. No streaks, guilt or warnings.
 5. The strap should just work. When it doesn't, one line and one fix.
 

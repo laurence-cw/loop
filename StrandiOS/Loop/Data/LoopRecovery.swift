@@ -33,8 +33,6 @@ struct LoopRecovery: Equatable {
     var breathing = LoopVital()
     /// Skin temperature change from your normal, °C (Noop's stored deviation).
     var temperatureChange: Double?
-    /// The strap is a WHOOP 5.0 / MG, where Noop says heart variability and breathing aren't reliable yet.
-    var unreliableOnStrap = false
 
     static let empty = LoopRecovery()
 
@@ -44,9 +42,8 @@ struct LoopRecovery: Equatable {
 
 @MainActor
 enum LoopRecoveryReader {
-    static func read(repo: Repository, isWhoop5: Bool) -> LoopRecovery {
+    static func read(repo: Repository) -> LoopRecovery {
         var out = LoopRecovery()
-        out.unreliableOnStrap = isWhoop5
         let days = repo.days
         let todayKey = repo.today?.day ?? Repository.localDayKey(Repository.logicalDay(Date()))
         let today = repo.today ?? days.last(where: { $0.day == todayKey })

@@ -166,8 +166,10 @@ A black-with-light palette: two neutrals for ground and surface, two text tones,
 - **Orb word** (Expanded Regular 400, 22pt, scaled, sentence case): the Recovery word directly under the hero, in the band colour.
 - **Sentence** (Regular 400, 20pt, the title3 text style): the one sentence that greets him by name and says what today means. Centred and wrapping freely.
 - **Row value** (Expanded Regular 400, 20pt, title3, monospaced digits): row values and score words, plus the arc-foot values.
-- **Body** (Regular 400, 17pt): explanations and checklist lines. Row titles use Body at Regular.
-- **Meta** (Medium 500, 13pt, the footnote text style, monospaced digits): status pill text, units, and second facts such as steps.
+- **Body** (Regular 400, 17pt): checklist lines and sheet text. Row titles use Body at Regular (`LoopFont.rowTitle`).
+- **Inline title** (Expanded Regular 400, 17pt, `LoopFont.inlineTitle`): the small navigation-bar title that fades in once a section's page title scrolls away.
+- **Meta** (Medium 500, 13pt, the footnote text style, monospaced digits, `LoopFont.meta`): status pill text, units, and second facts such as steps, a number under its range bar, and "Your normal 52–59".
+- **Explainer** (Regular 400, 13pt, the footnote text style, `LoopFont.explainer`): the one-line "what this means" under a measure, plus honest-state lines such as "Not reliable on this strap yet." Always Muted.
 
 ### Named Rules
 **The Expanded-for-Numbers Rule.** Numbers and headings use SF Pro Expanded with monospaced digits. Sentences use SF Pro. Never set a sentence in Expanded.
@@ -226,6 +228,15 @@ A Surface card, at least 72pt tall. On the left is the section symbol (bolt.fill
 
 ### Sheet
 The Find-my-strap sheet uses a Surface ground at medium detent with 24pt padding. It has a Title, an optional Muted "Last synced" line, three checklist lines (a Muted SF Symbol in a 24pt column with Body Text) and one primary button at the foot.
+
+### Section screen (Recovery, and Sleep / Activity to follow)
+Pushed from Home with the system back button. The scroll view uses iOS 26's soft top scroll edge and a dark navigation bar, so the status bar stays light. The page title is Expanded Light, with the section's SF Symbol in its colour beside it. A small Expanded Regular title fades into the bar once the page title scrolls away. Measures render only after their data is read, then fade in, so a placeholder never reads "No data".
+
+### Vital Card (range bar)
+A Surface card with the section's leading glow, full width. The title sits in Muted Body, with the plain word beneath it at row-value size in Text ("Normal for you", "Higher than normal"). Below that is the range bar: a 6pt Line track, the normal band (baseline ± one sigma, Noop's |z| ≤ 1 rule) in Muted at 45%, and a 16pt Text dot with a 3pt Surface ring. The dot starts at the band's centre and eases to the value with LoopMotion.fill. Directly under the bar, 8pt below, the number sits at Meta Text on the left and "Your normal a–b" at Meta Muted on the right. The Explainer comes last. On an unreliable strap, the card shows only the title plus "Not reliable on this strap yet." in Explainer Muted.
+
+### Check Row
+For the "Normal / A bit off" measures. Not a card: a title in Body on the left, the word at row-value size on the right on the same baseline, and the Explainer beneath. Line hairlines go between rows only, never after the last one.
 
 ### Loop Ring (signature)
 Two arcs around the Recovery orb. Sleep (Signal) runs bottom to top on the left, filled by hours slept against hours needed. Activity (Pulse) runs top to bottom on the right, filled by Effort out of 100. A nil value draws only the Line track. The orb shows the hero score with the band word under it. If the score is carried over, it adds "From last night" in Meta Muted. While learning, the orb shows a Glow tint, a 4pt progress ring, and "n/4" with "nights". With no data it shows "No score" in Muted. The ring is one accessibility element with a full spoken summary.

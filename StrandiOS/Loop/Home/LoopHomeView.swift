@@ -12,6 +12,7 @@ struct LoopHomeView: View {
     @AppStorage(LoopPrefs.firstNameKey) private var firstName = ""
     @State private var today = LoopToday.empty
     @State private var showFindStrap = false
+    @State private var openRecovery = false
     private static let rowsAnchor = "loop.home.rows"
 
     private var status: LoopStatus {
@@ -53,9 +54,11 @@ struct LoopHomeView: View {
             today = await LoopTodayReader.read(repo: repo, profile: profile)
             #if DEBUG
             if let preview = LoopPreviewState.requested { today = preview.apply(to: today) }
+            if CommandLine.arguments.contains("--loop-open-recovery") { openRecovery = true }
             #endif
         }
         .refreshable { model.ble.syncNow() }
+        .navigationDestination(isPresented: $openRecovery) { LoopRecoveryView(today: $today) }
         .sheet(isPresented: $showFindStrap) {
             LoopFindStrapSheet(status: status)
                 .presentationDetents([.medium])
@@ -80,10 +83,15 @@ struct LoopHomeView: View {
             Spacer(minLength: LoopSpace.xl)
 
             VStack(spacing: 0) {
-                LoopRing(today: today, sleepFraction: sleepFraction, effortFraction: effortFraction)
-                    .frame(maxWidth: 320)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(ringAccessibilityLabel)
+                Button { openRecovery = true } label: {
+                    LoopRing(today: today, sleepFraction: sleepFraction, effortFraction: effortFraction)
+                        .frame(maxWidth: 320)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(LoopPressStyle())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(ringAccessibilityLabel)
+                .accessibilityHint("Opens Recovery")
 
                 arcFeet
                     .frame(maxWidth: 320)
@@ -142,12 +150,14 @@ struct LoopHomeView: View {
 
     // MARK: Below the fold
 
-    // Tapping into each section arrives with the section screens, the next build step
-    // (recorded in the Home surface brief).
+    // Sleep and Activity open their sections once those screens are built.
     private var rows: some View {
         VStack(spacing: LoopSpace.s) {
-            LoopSectionRow(symbol: "bolt.fill", title: "Recovery", colour: recoveryColour,
-                           word: recoveryWord, value: today.recovery.score.map { "\($0)" })
+            Button { openRecovery = true } label: {
+                LoopSectionRow(symbol: "bolt.fill", title: "Recovery", colour: recoveryColour,
+                               word: recoveryWord, value: today.recovery.score.map { "\($0)" }, opens: true)
+            }
+            .buttonStyle(LoopPressStyle())
             LoopSectionRow(symbol: "moon.fill", title: "Sleep", colour: LoopColor.signal,
                            word: sleepWord, value: today.sleepMin.map { LoopFormat.duration($0 * 60) })
             LoopSectionRow(symbol: "figure.walk", title: "Activity", colour: LoopColor.pulse,
@@ -228,6 +238,8 @@ struct LoopSectionRow: View {
     let value: String?
     /// An optional second fact under the title, e.g. steps under Activity.
     var detail: String? = nil
+    /// Shows a chevron when the row opens its section.
+    var opens: Bool = false
 
     var body: some View {
         HStack(spacing: LoopSpace.s) {
@@ -261,6 +273,11 @@ struct LoopSectionRow: View {
                         .font(LoopFont.rowValue)
                         .foregroundStyle(LoopColor.muted)
                 }
+            }
+            if opens {
+                Image(systemName: "chevron.right")
+                    .font(.footnote)
+                    .foregroundStyle(LoopColor.muted)
             }
         }
         .padding(LoopSpace.cardPadding)
@@ -442,3 +459,12 @@ enum LoopPreviewState: String {
     }
 }
 #endif
+
+/// Press feedback for tappable Loop surfaces: a slight dim, no bounce.
+struct LoopPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}

@@ -78,6 +78,8 @@ enum LoopFont {
         .system(size: size, weight: .regular).width(.expanded)
     }
     static let headlineNumber = number(size: 40)
+    /// The small title in the navigation bar once the page title has scrolled away: Expanded Regular.
+    static let inlineTitle = Font.system(.body, weight: .regular).width(.expanded)
     /// Screen title: Expanded Light.
     static let title = Font.system(.title, weight: .light).width(.expanded)
     /// The one sentence: Regular.
@@ -88,6 +90,10 @@ enum LoopFont {
     static let rowValue = Font.system(.title3, weight: .regular).width(.expanded).monospacedDigit()
     /// Row titles ("Recovery"): body Regular.
     static let rowTitle = Font.system(.body, weight: .regular)
+    /// Meta: second facts (a number under its bar, "Your normal 52–59", steps), units, the pill.
+    static let meta = Font.system(.footnote, weight: .medium).monospacedDigit()
+    /// Explainers: the one-line "what this means" under a measure, and honest-state lines.
+    static let explainer = Font.system(.footnote, weight: .regular)
 }
 
 private extension Color {

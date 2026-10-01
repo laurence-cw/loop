@@ -10,9 +10,6 @@ struct LoopRing: View {
     let effortFraction: Double?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathing = false
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 72
-    @ScaledMetric(relativeTo: .title2) private var wordSize: CGFloat = 22
 
     /// Gap at the top and bottom of the ring, in degrees, so the two arcs read as two halves.
     private let gap: Double = 16
@@ -26,18 +23,12 @@ struct LoopRing: View {
                 arc(from: 90 + gap / 2, to: 270 - gap / 2, fill: sleepFraction, colour: LoopColor.signal)
                 // Activity: right half, top → bottom.
                 arc(from: 270 + gap / 2, to: 450 - gap / 2, fill: effortFraction, colour: LoopColor.pulse)
-                orbView(diameter: d * 0.58)
+                LoopOrb(recovery: today.recovery, diameter: d * 0.58)
             }
             .frame(width: d, height: d)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
         .aspectRatio(1, contentMode: .fit)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: LoopMotion.breathPeriod / 2).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
     }
 
     // MARK: Arcs
@@ -56,10 +47,19 @@ struct LoopRing: View {
         .padding(LoopShape.arcStroke / 2)
         .animation(reduceMotion ? nil : LoopMotion.fill, value: f)
     }
+}
 
-    // MARK: Orb
+/// The Recovery orb: a Surface disc lit from behind in the colour of what's left. It breathes slowly.
+struct LoopOrb: View {
+    let recovery: LoopToday.Recovery
+    let diameter: CGFloat
 
-    private func orbView(diameter: CGFloat) -> some View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathing = false
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 72
+    @ScaledMetric(relativeTo: .title2) private var wordSize: CGFloat = 22
+
+    var body: some View {
         let tint = orbTint
         return ZStack {
             // The glow: behind the orb only, soft enough to notice on a second look.
@@ -79,7 +79,7 @@ struct LoopRing: View {
                 .overlay(Circle().strokeBorder(tint.opacity(LoopGlow.strong), lineWidth: 1))
                 .frame(width: diameter, height: diameter)
 
-            if case .learning(let nights, let of) = today.recovery {
+            if case .learning(let nights, let of) = recovery {
                 learningRing(nights: nights, of: of, diameter: diameter)
             }
 
@@ -87,11 +87,17 @@ struct LoopRing: View {
                 .frame(width: diameter * 0.84)
         }
         .scaleEffect(breathing && !reduceMotion ? LoopMotion.breathScale : 1)
-        .animation(LoopMotion.colourFade, value: today.recovery)
+        .animation(LoopMotion.colourFade, value: recovery)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: LoopMotion.breathPeriod / 2).repeatForever(autoreverses: true)) {
+                breathing = true
+            }
+        }
     }
 
     private var orbTint: Color {
-        switch today.recovery {
+        switch recovery {
         case .scored(let s), .carried(let s): return RecoveryBand(score: s).colour
         case .learning: return LoopColor.glow
         case .noData: return LoopColor.line
@@ -100,7 +106,7 @@ struct LoopRing: View {
 
     @ViewBuilder
     private var orbContent: some View {
-        switch today.recovery {
+        switch recovery {
         case .scored(let s), .carried(let s):
             let band = RecoveryBand(score: s)
             VStack(spacing: 0) {
@@ -115,7 +121,7 @@ struct LoopRing: View {
                     .foregroundStyle(band.colour)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-                if case .carried = today.recovery {
+                if case .carried = recovery {
                     Text("From last night")
                         .font(.footnote)
                         .foregroundStyle(LoopColor.muted)
@@ -134,8 +140,8 @@ struct LoopRing: View {
             }
         case .noData:
             Text("No score")
-                    .font(LoopFont.word(size: wordSize))
-                    .foregroundStyle(LoopColor.muted)
+                .font(LoopFont.word(size: wordSize))
+                .foregroundStyle(LoopColor.muted)
         }
     }
 

@@ -1380,6 +1380,21 @@ public final class BLEManager: NSObject, ObservableObject {
         installForegroundSalvageProbe()
     }
 
+    /// Persist the just-stamped `lastSyncedAt` so it survives a relaunch.
+    ///
+    /// Stamped against the strap that actually completed this offload, never globally: the single key
+    /// reported one strap's sync on another's screen, and it read as reassuring rather than wrong — see
+    /// LastSyncAttribution. Kotlin twin: NoopPrefs.setLastSyncAtFor. The global key is still written: the
+    /// prefs-only debug header is its only remaining reader and cannot resolve per device, so dropping
+    /// this write would freeze that line rather than fix it. It is also what
+    /// `seedLastSyncFromActiveStrap`'s single-strap fallback reads across the upgrade.
+    private func persistLastSyncedAt() {
+        if let key = LastSyncAttribution.prefKey(peripheralId: peripheral?.identifier.uuidString) {
+            UserDefaults.standard.set(state.lastSyncedAt, forKey: key)
+        }
+        UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
+    }
+
     /// Build the WhoopStore + Collector + Backfiller asynchronously. Safe to call multiple
     /// times — bails out early if the collector is already initialised.
     /// Seed the last-sync display from the ACTIVE strap's own stamp — PR #556's intent, correctly attributed.
@@ -2923,17 +2938,7 @@ public final class BLEManager: NSObject, ObservableObject {
                 whoop5EmptyOffload.reset()
                 state.historySyncExperimental = false
             }
-            // Stamped against the strap that actually completed this offload, never globally: the single
-            // key reported one strap's sync on another's screen, and it read as reassuring rather than
-            // wrong — see LastSyncAttribution. Kotlin twin: NoopPrefs.setLastSyncAtFor.
-            if let key = LastSyncAttribution.prefKey(peripheralId: peripheral?.identifier.uuidString) {
-                UserDefaults.standard.set(state.lastSyncedAt, forKey: key)
-            }
-            // Global kept for the same reason as the write-health pair above: the prefs-only debug header
-            // is its only remaining reader and cannot resolve per device, so dropping this write would
-            // freeze that line rather than fix it. It is also what `seedLastSyncFromActiveStrap`'s
-            // single-strap fallback reads across the upgrade.
-            UserDefaults.standard.set(state.lastSyncedAt, forKey: "lastSyncedAt")
+            persistLastSyncedAt()
             // NOTE: the auto-continue streak is NOT reset here. A HISTORY_COMPLETE is no longer assumed to
             // mean "caught up" (#25): a strap whose firmware segments a deep offload into many small
             // HISTORY_COMPLETE slices would otherwise reset the streak on every slice and never engage the
@@ -2980,6 +2985,13 @@ public final class BLEManager: NSObject, ObservableObject {
                 state.lastSyncError = BLEManager.timeoutSyncError(futureClockBanner: futureClockBanner,
                                                                   bankedThisOffload: bankedThisOffload)
             }
+        }
+        // #1466/#2387: a productive idle-timeout ending is a completed sync on a WHOOP 4.0 (see
+        // `syncStampEarned`). HISTORY_COMPLETE stamps inside its own branch above.
+        if reason == "timeout", BLEManager.syncStampEarned(reason: reason, bankedRows: persistedSensorRows,
+                                                            persistStalled: backfiller?.persistStalled == true) {
+            state.lastSyncedAt = Date().timeIntervalSince1970
+            persistLastSyncedAt()
         }
         checkStrapLiveness()         // safety-net: strap ahead of us AND our frontier frozen ⇒ stuck?
         // #364 / #25: a session that ended on the 60s IDLE cap OR on a true HISTORY_COMPLETE while still
@@ -3200,6 +3212,19 @@ public final class BLEManager: NSObject, ObservableObject {
     nonisolated static func sessionEndedOutcome(reason: String, bankedRows: Bool) -> String {
         guard reason == "timeout" else { return "" }
         return bankedRows ? " outcome=drained" : " outcome=nothing-banked"
+    }
+
+    /// Whether this offload ending stamps "last synced". HISTORY_COMPLETE always has. #1466/#2387: a WHOOP
+    /// 4.0 routinely ends a full, successful offload on the idle timeout because its firmware never emits
+    /// HISTORY_COMPLETE, so stamping on HISTORY_COMPLETE alone left "Last synced" frozen for days on a
+    /// strap syncing every 15 minutes. A timeout now stamps too when it banked rows (the same test
+    /// `sessionEndedOutcome` reports as "drained" and Kotlin's `shouldNotifySuccessfulOffload` already
+    /// applies) and nothing failed to persist: a session whose writes stalled kept the strap's data on the
+    /// strap, and "synced" would claim otherwise. Disconnects and aborts never stamp. Twin of the Kotlin
+    /// `WhoopBleClient.syncStampEarned`.
+    nonisolated static func syncStampEarned(reason: String, bankedRows: Bool, persistStalled: Bool) -> Bool {
+        if reason == "HISTORY_COMPLETE" { return true }
+        return reason == "timeout" && bankedRows && !persistStalled
     }
 
     /// #1466: the banner (if any) for an offload that ended on the idle TIMEOUT rather than

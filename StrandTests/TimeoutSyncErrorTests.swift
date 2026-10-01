@@ -75,6 +75,42 @@ final class TimeoutSyncErrorTests: XCTestCase {
         }
     }
 
+    // MARK: - syncStampEarned (#1466/#2387)
+
+    /// The bug: a WHOOP 4.0 that drained its backlog and ended on the idle timeout never stamped
+    /// "last synced", so the sync time froze for days on a strap syncing every 15 minutes.
+    func testAProductiveTimeoutStampsLastSynced() {
+        XCTAssertTrue(BLEManager.syncStampEarned(reason: "timeout", bankedRows: true, persistStalled: false))
+    }
+
+    /// A stall that banked nothing is not a sync.
+    func testAnEmptyTimeoutDoesNotStamp() {
+        XCTAssertFalse(BLEManager.syncStampEarned(reason: "timeout", bankedRows: false, persistStalled: false))
+    }
+
+    /// Rows landed early but a later write failed: the strap still holds data we didn't save, so
+    /// "synced" would be a false claim.
+    func testATimeoutWhoseWritesStalledDoesNotStamp() {
+        XCTAssertFalse(BLEManager.syncStampEarned(reason: "timeout", bankedRows: true, persistStalled: true))
+    }
+
+    /// HISTORY_COMPLETE behaves exactly as before, whatever the session banked.
+    func testHistoryCompleteAlwaysStamps() {
+        for rows in [true, false] {
+            for stalled in [true, false] {
+                XCTAssertTrue(BLEManager.syncStampEarned(reason: "HISTORY_COMPLETE", bankedRows: rows,
+                                                         persistStalled: stalled))
+            }
+        }
+    }
+
+    /// A disconnect or an abort is neither success nor failure, and never stamps.
+    func testOtherEndingsNeverStamp() {
+        for reason in ["disconnected", "aborted by user"] {
+            XCTAssertFalse(BLEManager.syncStampEarned(reason: reason, bankedRows: true, persistStalled: false))
+        }
+    }
+
     /// Deliberately ROWS, where the banner asks `offloadBankedAnything` (chunks OR rows OR deep packets).
     /// A session that acked chunks but persisted nothing is the #77/#120/#214 empty-offload shape: the
     /// banner stays silent because progress was made, while the log says nothing-banked because nothing

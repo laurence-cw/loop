@@ -90,6 +90,39 @@ class TimeoutSyncErrorTest {
         }
     }
 
+    // ── syncStampEarned (#1466/#2387) ────────────────────────────────────────
+    // Twin of the Swift `TimeoutSyncErrorTests` syncStampEarned cases; same inputs, same answers.
+
+    /** The bug: a WHOOP 4.0 that drained its backlog and ended on the idle timeout never stamped
+     *  "last synced", so the sync time froze for days on a strap syncing every 15 minutes. */
+    @Test fun aProductiveTimeoutStampsLastSynced() {
+        assertTrue(WhoopBleClient.syncStampEarned("timeout", bankedRows = true, persistStalled = false))
+    }
+
+    /** A stall that banked nothing is not a sync. */
+    @Test fun anEmptyTimeoutDoesNotStamp() {
+        assertFalse(WhoopBleClient.syncStampEarned("timeout", bankedRows = false, persistStalled = false))
+    }
+
+    /** Rows landed early but a later write failed: "synced" would be a false claim. */
+    @Test fun aTimeoutWhoseWritesStalledDoesNotStamp() {
+        assertFalse(WhoopBleClient.syncStampEarned("timeout", bankedRows = true, persistStalled = true))
+    }
+
+    /** HISTORY_COMPLETE behaves exactly as before, whatever the session banked. */
+    @Test fun historyCompleteAlwaysStamps() {
+        for (rows in listOf(true, false)) for (stalled in listOf(true, false)) {
+            assertTrue(WhoopBleClient.syncStampEarned("HISTORY_COMPLETE", bankedRows = rows, persistStalled = stalled))
+        }
+    }
+
+    /** A disconnect or an abort is neither success nor failure, and never stamps. */
+    @Test fun otherEndingsNeverStamp() {
+        for (reason in listOf("disconnected", "aborted by user")) {
+            assertFalse(WhoopBleClient.syncStampEarned(reason, bankedRows = true, persistStalled = false))
+        }
+    }
+
     /** Deliberately ROWS, where the banner asks [WhoopBleClient.offloadBankedAnything] (chunks OR rows OR
      *  deep packets). A session that acked chunks but persisted nothing is the empty-offload shape: the
      *  banner stays silent because progress was made, the log says nothing-banked because nothing landed.

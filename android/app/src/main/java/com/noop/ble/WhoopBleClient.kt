@@ -589,6 +589,17 @@ class WhoopBleClient(
 
         internal fun shouldNotifySuccessfulOffload(reason: String, bankedRows: Boolean): Boolean =
             reason == "HISTORY_COMPLETE" || (reason == "timeout" && bankedRows)
+
+        /** Whether this offload ending stamps "last synced". HISTORY_COMPLETE always has. #1466/#2387: a
+         *  WHOOP 4.0 routinely ends a full, successful offload on the idle timeout because its firmware
+         *  never emits HISTORY_COMPLETE, so stamping on HISTORY_COMPLETE alone left "Last synced" frozen for
+         *  days on a strap syncing every 15 minutes. A timeout now stamps too when it banked rows (the same
+         *  test as [shouldNotifySuccessfulOffload] and [sessionEndedOutcome]'s "drained") and nothing failed
+         *  to persist: a session whose writes stalled kept the strap's data on the strap, and "synced" would
+         *  claim otherwise. Disconnects and aborts never stamp. Twin of the Swift
+         *  `BLEManager.syncStampEarned`. */
+        internal fun syncStampEarned(reason: String, bankedRows: Boolean, persistStalled: Boolean): Boolean =
+            reason == "HISTORY_COMPLETE" || (reason == "timeout" && bankedRows && !persistStalled)
         /**
          * Cap on the in-app strap-log ring buffer (for the "Share strap log" diagnostics export).
          * Raised from the old ~1h (2,000 lines) to retain a rolling ~24h of activity (#510 —
@@ -11174,13 +11185,15 @@ class WhoopBleClient(
             val aheadH = ((strapNewestTs ?: 0L) - nowSec) / 3600
             log("Backfill: the strap's newest banked record is ${aheadH}h AHEAD of the wall clock (#324/#928) - clock set in the future; showing the future-clock banner and importing nothing from this range.")
         }
-        // PR #556 reimpl: persist the HISTORY_COMPLETE instant so "Last synced N ago" survives a BLE-client
+        // PR #556 reimpl: persist the completed-sync instant so "Last synced N ago" survives a BLE-client
         // recreation / process restart and stops reverting to "Never".
         // Stamped against the strap that actually completed this offload, never globally. The old single
         // key reported one strap's sync on another's screen — a 5/MG with zero banked rows reading
         // "Last sync: 4d ago" from its paired 4.0, which is what sent this whole investigation after a
         // regression that never existed.
-        if (reason == "HISTORY_COMPLETE") NoopPrefs.setLastSyncAtFor(context, lastDeviceAddress, nowSec)
+        // #1466/#2387: a productive idle-timeout ending counts as a completed sync too (see [syncStampEarned]).
+        val stampSync = syncStampEarned(reason, persistedSensorRows, backfiller.persistStalled)
+        if (stampSync) NoopPrefs.setLastSyncAtFor(context, lastDeviceAddress, nowSec)
         // #57 debug: write-health signal for the export. "Last sync" fires even on an empty/failed offload,
         // so it can't distinguish "0 rows because the strap was empty" from "0 rows because writes FAILED".
         // Record the last time rows actually landed, and the last time an offload STALLED on a persist
@@ -11252,6 +11265,7 @@ class WhoopBleClient(
             "timeout" -> it.copy(
                 backfilling = false,
                 syncChunksThisSession = ackedChunksThisSession,
+                lastSyncAt = if (stampSync) nowSec else it.lastSyncAt,
                 // #580: on a history-experimental 5/MG this isn't a sync failure — suppress the "went quiet"
                 // error (it's just the empty offload), and surface the experimental flag instead.
                 // #324/#928: a future-dated WHOOP-4 TIMES OUT on its deep future-dated backlog — prefer the

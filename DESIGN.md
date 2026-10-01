@@ -244,6 +244,18 @@ One 12pt bar split by each stage's share of the night, with 3pt gaps between seg
 ### Week Chart (sleep window)
 Monday to Sunday. Each night is a 10pt Signal capsule running from bedtime (top) to wake (bottom), on faint 2pt Line guides. The axis covers the earliest bed to the latest wake, padded, and is never narrower than 9pm–9am. Two round-hour labels in Meta Muted are placed by the same scale as the bars. Day letters are in Meta: Text for days so far, Muted for days still to come. A past night with nothing recorded reads "No data" in Meta Muted; it is never drawn as zero. Future days are left empty. One sentence above the chart covers bedtime and wake-time steadiness, and only appears after three or more nights. It is never a telling-off.
 
+### Effort Ring (Activity hero)
+On the Activity screen, a 220pt Pulse ring (10pt, round cap, Line track, no glow) starts at the top and spends clockwise down the right, the way Home's Activity arc does. Inside it: the effort in Expanded Light at the 44pt section-hero size, with "/100" in Meta Muted. Under that, the score word in Pulse at 24pt Expanded Regular, then steps in Meta Muted. The word and steps lines are single-line and shrink to fit at large text sizes.
+
+### Day Strip (effort through the day)
+One bar per hour from 6am to midnight. Each bar is the effort that hour added, worked out from Noop's own StrainScorer: today's effort up to the end of the hour minus today's effort up to its start. Peaks (60% or more of the day's top hour) are full Pulse; the rest are Pulse at 45%. An hour with nothing recorded is a 3pt Line stub, never zero. Hours still to come are empty. A single 1pt Line baseline sits under the bars. "6am" and "12am" are pinned to the baseline's ends, and "12pm" and "6pm" sit on the bars' scale at 6/18 and 12/18, all in Meta Muted. One line above says when the day was busiest, or "No hour-by-hour record for today yet." when no heart rate has synced.
+
+### Activity Row
+Today's detected or recorded activities that have already started, as a quiet list rather than cards. Each row has the name in Body, then the start time and duration in Meta Muted. On the right, the score word in Pulse and the effort figure in Text share one baseline at row-value size ("Low 31"). Line hairlines go between rows only.
+
+### Week Bars (effort / steps)
+Two charts, Monday to Sunday, each with a single series and its title in Body. Bars sit on a 64pt plot. Today is full Pulse, and past days are Pulse at 55%. A past day with nothing recorded reads "No data" in Meta Muted. Days still to come are empty, with Muted day letters. No figure for today is repeated in the chart headers.
+
 ### Check Row
 For the "Normal / A bit off" measures. Not a card: a title in Body on the left, the word at row-value size on the right on the same baseline, and the Explainer beneath. Line hairlines go between rows only, never after the last one.
 

@@ -14,6 +14,7 @@ struct LoopHomeView: View {
     @State private var showFindStrap = false
     @State private var openRecovery = false
     @State private var openSleep = false
+    @State private var openActivity = false
     private static let rowsAnchor = "loop.home.rows"
 
     private var status: LoopStatus {
@@ -57,11 +58,13 @@ struct LoopHomeView: View {
             if let preview = LoopPreviewState.requested { today = preview.apply(to: today) }
             if CommandLine.arguments.contains("--loop-open-recovery") { openRecovery = true }
             if CommandLine.arguments.contains("--loop-open-sleep") { openSleep = true }
+            if CommandLine.arguments.contains("--loop-open-activity") { openActivity = true }
             #endif
         }
         .refreshable { model.ble.syncNow() }
         .navigationDestination(isPresented: $openRecovery) { LoopRecoveryView(today: $today) }
         .navigationDestination(isPresented: $openSleep) { LoopSleepView(today: $today) }
+        .navigationDestination(isPresented: $openActivity) { LoopActivityView(today: $today) }
         .sheet(isPresented: $showFindStrap) {
             LoopFindStrapSheet(status: status)
                 .presentationDetents([.medium])
@@ -153,7 +156,6 @@ struct LoopHomeView: View {
 
     // MARK: Below the fold
 
-    // Activity opens its section once that screen is built.
     private var rows: some View {
         VStack(spacing: LoopSpace.s) {
             Button { openRecovery = true } label: {
@@ -167,9 +169,12 @@ struct LoopHomeView: View {
                                opens: true)
             }
             .buttonStyle(LoopPressStyle())
-            LoopSectionRow(symbol: "figure.walk", title: "Activity", colour: LoopColor.pulse,
-                           word: effortWord, value: today.effort.map { "\(Int($0.rounded()))" },
-                           detail: today.steps.map { "\(LoopFormat.steps($0)) steps" })
+            Button { openActivity = true } label: {
+                LoopSectionRow(symbol: "figure.walk", title: "Activity", colour: LoopColor.pulse,
+                               word: effortWord, value: today.effort.map { "\(Int($0.rounded()))" },
+                               detail: today.steps.map { "\(LoopFormat.steps($0)) steps" }, opens: true)
+            }
+            .buttonStyle(LoopPressStyle())
         }
     }
 
@@ -462,6 +467,7 @@ enum LoopPreviewState: String {
         case .nodata:
             t.recovery = .noData; t.sleepMin = nil; t.sleepScore = nil; t.effort = nil; t.steps = nil
         }
+        if CommandLine.arguments.contains("--loop-preview-activity") { t.effort = 58; t.steps = 13_277 }
         return t
     }
 }

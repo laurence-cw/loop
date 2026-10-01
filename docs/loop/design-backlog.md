@@ -9,3 +9,6 @@ Queued by the owner on 2026-10-01, to do after the data features (weekly round-u
    read as brackets around the orb rather than a closed ring.
 3. **Numbers count up on load** on Home (recovery score, and the sleep / effort values).
 4. **Smaller text in the centre of every ring** (Home orb, Recovery orb, Sleep and Activity rings).
+5. **Home section rows: words only, no numbers.** Recovery, Sleep and Activity rows show just
+   their word ("Charged", "Great", "OK"), not the number beside it, so the rows don't get
+   cramped. The numbers stay on the ring above and in each section. (Queued 2026-10-01.)

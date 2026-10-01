@@ -58,3 +58,37 @@ extension View {
         modifier(LoopOnSeen(threshold: threshold, action: action))
     }
 }
+
+/// A number that counts up to its value when it appears, and eases to any new value after. Monospaced
+/// digits in the caller's font keep it from jittering as it counts. Plain under Reduce Motion.
+struct LoopCountUp: View {
+    let value: Double
+    let format: (Double) -> String
+    var duration: Double = 0.9
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown: Double = 0
+
+    var body: some View {
+        LoopCountUpText(value: shown, format: format)
+            .accessibilityLabel(format(value))
+            .onAppear { settle() }
+            .onChange(of: value) { _, _ in settle() }
+    }
+
+    private func settle() {
+        if reduceMotion { shown = value; return }
+        withAnimation(.easeOut(duration: duration)) { shown = value }
+    }
+}
+
+/// The animatable text under `LoopCountUp`: SwiftUI interpolates `value` and redraws each frame.
+private struct LoopCountUpText: View, Animatable {
+    var value: Double
+    let format: (Double) -> String
+    var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
+    var body: some View { Text(format(value)) }
+}

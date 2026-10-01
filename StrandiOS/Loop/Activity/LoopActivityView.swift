@@ -118,7 +118,7 @@ struct LoopEffortRing: View {
     let steps: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 44
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 36
     @State private var shown: Double = 0
 
     private var fraction: Double { min(max((effort ?? 0) / 100, 0), 1) }
@@ -140,13 +140,13 @@ struct LoopEffortRing: View {
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                     Text(ScoreWord.word(for: score))
-                        .font(LoopFont.word(size: 24))
+                        .font(LoopFont.word(size: 20))
                         .foregroundStyle(LoopColor.pulse)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                 } else {
                     Text("No data")
-                        .font(LoopFont.word(size: 22))
+                        .font(LoopFont.word(size: 18))
                         .foregroundStyle(LoopColor.muted)
                 }
                 Text(steps.map { "\(LoopFormat.steps($0)) steps" } ?? "No steps yet")

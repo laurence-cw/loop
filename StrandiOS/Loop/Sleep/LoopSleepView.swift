@@ -145,7 +145,7 @@ struct LoopSleepRing: View {
     let score: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 44
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 36
     @State private var shown: Double = 0
 
     private var fraction: Double {
@@ -165,7 +165,7 @@ struct LoopSleepRing: View {
                 .opacity(shown > 0.001 ? 1 : 0)
             VStack(spacing: 2) {
                 Text(asleepMin.map { LoopFormat.duration($0 * 60) } ?? "No data")
-                    .font(asleepMin == nil ? LoopFont.word(size: 22) : LoopFont.number(size: heroSize))
+                    .font(asleepMin == nil ? LoopFont.word(size: 18) : LoopFont.number(size: heroSize))
                     .foregroundStyle(asleepMin == nil ? LoopColor.muted : LoopColor.text)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
@@ -175,7 +175,7 @@ struct LoopSleepRing: View {
                     .foregroundStyle(LoopColor.muted)
                 if let score {
                     Text(ScoreWord.word(for: score))
-                        .font(LoopFont.word(size: 24))
+                        .font(LoopFont.word(size: 20))
                         .foregroundStyle(LoopColor.signal)
                         .padding(.top, LoopSpace.xs)
                 }

@@ -214,7 +214,7 @@ struct LoopHomeView: View {
                 .accessibilityAddTraits(.isHeader)
             stepButton("chevron.right", label: "Later day", enabled: index < pages.count - 1) { step(to: index + 1) }
         }
-        .frame(maxWidth: 320)
+        .frame(maxWidth: 290)
     }
 
     private func stepButton(_ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -240,7 +240,7 @@ struct LoopHomeView: View {
         return VStack(spacing: 0) {
             Button { openRecovery = true } label: {
                 LoopRing(today: t, sleepFraction: sleepFraction(t), effortFraction: effortFraction(t))
-                    .frame(maxWidth: 320)
+                    .frame(maxWidth: 260)
                     .contentShape(Circle())
             }
             .buttonStyle(LoopPressStyle())
@@ -250,7 +250,7 @@ struct LoopHomeView: View {
             .accessibilityHint(page.isToday ? "Opens Recovery" : "")
 
             arcFeet(t)
-                .frame(maxWidth: 320)
+                .frame(maxWidth: 290)
                 .padding(.top, LoopSpace.s)
 
             Text(sentence(t, page: page))
@@ -269,10 +269,10 @@ struct LoopHomeView: View {
     /// before it would wrap; only the accessibility text sizes stack them.
     @ViewBuilder
     private func arcFeet(_ t: LoopToday) -> some View {
-        let sleep = footValue(symbol: "moon.fill", colour: LoopColor.signal,
-                              text: t.sleepMin.map { LoopFormat.duration($0 * 60) })
-        let effort = footValue(symbol: "figure.walk", colour: LoopColor.pulse,
-                               text: t.effort.map { "\(Int($0.rounded()))" }, unit: "/100")
+        let sleep = footValue(symbol: "moon.fill", colour: LoopColor.signal, value: t.sleepMin,
+                              format: { LoopFormat.duration($0 * 60) })
+        let effort = footValue(symbol: "figure.walk", colour: LoopColor.pulse, value: t.effort,
+                               format: { "\(Int($0.rounded()))" }, unit: "/100")
         Group {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(spacing: LoopSpace.xs) {
@@ -290,17 +290,24 @@ struct LoopHomeView: View {
         .accessibilityHidden(true)
     }
 
-    private func footValue(symbol: String, colour: Color, text: String?, unit: String? = nil) -> some View {
+    /// One arc's value, counting up as it appears.
+    private func footValue(symbol: String, colour: Color, value: Double?, format: @escaping (Double) -> String,
+                           unit: String? = nil) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: LoopSpace.xs) {
             Image(systemName: symbol)
                 .font(.body)
                 .foregroundStyle(colour)
-            if let text {
-                (Text(text).foregroundStyle(LoopColor.text)
-                 + Text(unit ?? "").font(.footnote.weight(.medium)).foregroundStyle(LoopColor.muted))
-                    .font(LoopFont.rowValue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+            if let value {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    LoopCountUp(value: value, format: format)
+                        .foregroundStyle(LoopColor.text)
+                    if let unit {
+                        Text(unit).font(.footnote.weight(.medium)).foregroundStyle(LoopColor.muted)
+                    }
+                }
+                .font(LoopFont.rowValue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             } else {
                 Text("No data")
                     .font(LoopFont.rowValue)
@@ -321,14 +328,14 @@ struct LoopHomeView: View {
             Button { openRecovery = true } label: {
                 LoopSectionRow(symbol: "bolt.fill", title: "Recovery", colour: recoveryColour(t),
                                word: t.recovery.score.map { RecoveryBand(score: $0).word },
-                               value: t.recovery.score.map { "\($0)" }, opens: opens)
+                               value: t.recovery.score.map { "\($0)" }, opens: opens, wordOnly: true)
             }
             .buttonStyle(LoopPressStyle())
             .disabled(!opens)
             Button { openSleep = true } label: {
                 LoopSectionRow(symbol: "moon.fill", title: "Sleep", colour: LoopColor.signal,
                                word: t.sleepScore.map { ScoreWord.word(for: $0) },
-                               value: t.sleepMin.map { LoopFormat.duration($0 * 60) }, opens: opens)
+                               value: t.sleepMin.map { LoopFormat.duration($0 * 60) }, opens: opens, wordOnly: true)
             }
             .buttonStyle(LoopPressStyle())
             .disabled(!opens)
@@ -336,7 +343,7 @@ struct LoopHomeView: View {
                 LoopSectionRow(symbol: "figure.walk", title: "Activity", colour: LoopColor.pulse,
                                word: t.effort.map { ScoreWord.word(for: Int($0.rounded())) },
                                value: t.effort.map { "\(Int($0.rounded()))" },
-                               detail: t.steps.map { "\(LoopFormat.steps($0)) steps" }, opens: opens)
+                               detail: t.steps.map { "\(LoopFormat.steps($0)) steps" }, opens: opens, wordOnly: true)
             }
             .buttonStyle(LoopPressStyle())
             .disabled(!opens)
@@ -445,6 +452,9 @@ struct LoopSectionRow: View {
     var opens: Bool = false
     /// A row with no value to show (e.g. the weekly round-up): no "No data" either.
     var quiet: Bool = false
+    /// Just the word ("Charged"), no number: the ring above and the section itself carry the numbers.
+    /// Falls back to the number when there's no word yet (e.g. hours slept before Noop scores the night).
+    var wordOnly: Bool = false
 
     var body: some View {
         HStack(spacing: LoopSpace.s) {
@@ -471,9 +481,15 @@ struct LoopSectionRow: View {
             HStack(alignment: .firstTextBaseline, spacing: LoopSpace.xs) {
                 if let value {
                     // One Text, so the word and the number shrink together and keep one baseline.
-                    (Text(word.map { "\($0) " } ?? "").foregroundStyle(colour)
-                     + Text(value).foregroundStyle(LoopColor.text))
-                        .font(LoopFont.rowValue)
+                    Group {
+                        if wordOnly, let word {
+                            Text(word).foregroundStyle(colour)
+                        } else {
+                            (Text(word.map { "\($0) " } ?? "").foregroundStyle(colour)
+                             + Text(value).foregroundStyle(LoopColor.text))
+                        }
+                    }
+                    .font(LoopFont.rowValue)
                 } else if !quiet {
                     Text("No data")
                         .font(LoopFont.rowValue)

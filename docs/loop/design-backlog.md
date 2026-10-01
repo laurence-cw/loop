@@ -2,6 +2,9 @@
 
 Queued by the owner on 2026-10-01, to do after the data features (weekly round-up) are in.
 
+**Status: all five done 2026-10-01** (ring 260pt, arcs ±52° around 9 and 3 o'clock, `LoopCountUp`
+on the orb score and arc feet, centre text one size smaller, Home rows words-only).
+
 1. **Home ring smaller overall.**
 2. **Sleep and Activity arcs shorter, not a full circle.** Each arc should cover roughly the
    middle of its side (about 10 o'clock to 8 o'clock on the left, 2 o'clock to 4 o'clock on

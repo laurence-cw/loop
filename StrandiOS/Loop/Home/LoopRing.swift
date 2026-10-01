@@ -11,19 +11,21 @@ struct LoopRing: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Gap at the top and bottom of the ring, in degrees, so the two arcs read as two halves.
-    private let gap: Double = 16
+    /// How far each arc runs either side of its middle (9 o'clock for Sleep, 3 o'clock for Activity),
+    /// in degrees. Short of a half each, so the top and bottom stay open and the two arcs read as
+    /// brackets around the orb rather than a closed ring.
+    private let halfSpan: Double = 52
 
     var body: some View {
         GeometryReader { geo in
             let d = min(geo.size.width, geo.size.height)
             ZStack {
                 // SwiftUI angles run clockwise from 3 o'clock.
-                // Sleep: left half, bottom → top.
-                arc(from: 90 + gap / 2, to: 270 - gap / 2, fill: sleepFraction, colour: LoopColor.signal)
-                // Activity: right half, top → bottom.
-                arc(from: 270 + gap / 2, to: 450 - gap / 2, fill: effortFraction, colour: LoopColor.pulse)
-                LoopOrb(recovery: today.recovery, diameter: d * 0.58)
+                // Sleep: the left side, filling upward.
+                arc(from: 180 - halfSpan, to: 180 + halfSpan, fill: sleepFraction, colour: LoopColor.signal)
+                // Activity: the right side, spending downward.
+                arc(from: 360 - halfSpan, to: 360 + halfSpan, fill: effortFraction, colour: LoopColor.pulse)
+                LoopOrb(recovery: today.recovery, diameter: d * 0.62)
             }
             .frame(width: d, height: d)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
@@ -56,8 +58,8 @@ struct LoopOrb: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathing = false
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 72
-    @ScaledMetric(relativeTo: .title2) private var wordSize: CGFloat = 22
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 56
+    @ScaledMetric(relativeTo: .title2) private var wordSize: CGFloat = 18
 
     var body: some View {
         let tint = orbTint
@@ -110,10 +112,9 @@ struct LoopOrb: View {
         case .scored(let s), .carried(let s):
             let band = RecoveryBand(score: s)
             VStack(spacing: 0) {
-                Text("\(s)")
+                LoopCountUp(value: Double(s), format: { "\(Int($0.rounded()))" })
                     .font(LoopFont.number(size: heroSize))
                     .foregroundStyle(LoopColor.text)
-                    .contentTransition(.numericText(value: Double(s)))
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                 Text(band.word)
@@ -131,7 +132,7 @@ struct LoopOrb: View {
         case .learning(let nights, let of):
             VStack(spacing: 2) {
                 Text("\(nights)/\(of)")
-                    .font(LoopFont.headlineNumber)
+                    .font(LoopFont.number(size: 32))
                     .foregroundStyle(LoopColor.text)
                     .minimumScaleFactor(0.6)
                 Text("nights")

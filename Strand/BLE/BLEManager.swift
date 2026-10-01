@@ -993,6 +993,15 @@ public final class BLEManager: NSObject, ObservableObject {
     /// unsupported) that `centralManagerDidUpdateState` set. Lets the poweredOn transition clear ONLY
     /// that message, never a genuine mid-sync error (e.g. "Sync interrupted").
     private var radioStateErrorShown = false
+    /// True only while `tearDownLinkForRadio` runs the disconnect teardown itself because the radio went
+    /// off or reset. The teardown then skips what makes no sense with the radio down: re-issuing a connect
+    /// (a powered-off central refuses commands; poweredOn reconnects) and counting the drop as a strap
+    /// refusing to pair.
+    private var radioTeardownInProgress = false
+    /// The strap whose link `tearDownLinkForRadio` already tore down, so a real didDisconnect for it that
+    /// CoreBluetooth may still deliver does not run the teardown a second time. Cleared by the next
+    /// didConnect, after which any disconnect is a real one again.
+    private var linkTornDownByRadio: UUID?
     /// #391: pending one-shot escalation armed when the central reports `.unauthorized` while the TCC
     /// grant reads as granted (the macOS cold-start settling window). Canceled by ANY later state
     /// callback (the settle resolved); if it fires instead, the state never settled — the wedged-grant
@@ -5748,6 +5757,38 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(BLEManager.unauthorizedSettleSeconds), execute: work)
     }
 
+    /// The radio states that end any link this central holds: Bluetooth switched off, and bluetoothd
+    /// resetting (its crash/restart drops every connection). `.unauthorized` / `.unsupported` /
+    /// `.unknown` are left to the existing handling below.
+    nonisolated static func radioStateEndsLink(_ state: CBManagerState) -> Bool {
+        state == .poweredOff || state == .resetting
+    }
+
+    /// Whether `tearDownLinkForRadio` has anything to tear down: a peripheral with a live or half-made
+    /// session (connected, bonded, handshake done, or a link-up stamp). A held peripheral with none of
+    /// those, such as a standing connect still waiting, has no session state to clear.
+    nonisolated static func radioDropNeedsTeardown(hasPeripheral: Bool, connected: Bool, bonded: Bool,
+                                                   handshakeDone: Bool, linkUp: Bool) -> Bool {
+        hasPeripheral && (connected || bonded || handshakeDone || linkUp)
+    }
+
+    /// Run the ordinary disconnect teardown for the held link when the radio goes off or resets, since
+    /// CoreBluetooth generally won't call didDisconnect for it. The same handler, so nothing per-link can
+    /// be missed, with `radioTeardownInProgress` set so it neither reconnects nor counts a refusal. A
+    /// pending standing connect dies with the radio too; poweredOn's `connectFromSystem` re-issues it.
+    private func tearDownLinkForRadio(_ central: CBCentralManager) {
+        standingConnectAt = nil
+        guard let p = peripheral,
+              BLEManager.radioDropNeedsTeardown(hasPeripheral: true, connected: state.connected, bonded: didBond,
+                                                handshakeDone: connectHandshakeDone,
+                                                linkUp: linkUpSince != nil) else { return }
+        log("Bluetooth went \(central.state == .resetting ? "through a reset" : "off") with the strap's session still open - ending it now so the reconnect starts clean")
+        radioTeardownInProgress = true
+        centralManager(central, didDisconnectPeripheral: p, error: nil)
+        radioTeardownInProgress = false
+        linkTornDownByRadio = p.identifier
+    }
+
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         log("Central state: \(central.state.rawValue) (5 = poweredOn)")
         // #391: ANY state update means the cold-start settling window moved on — a pending
@@ -5756,6 +5797,13 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         unauthorizedSettleWork?.cancel()
         unauthorizedSettleWork = nil
         guard central.state == .poweredOn else {
+            // The radio going off or resetting ends the link, but CoreBluetooth generally invalidates the
+            // peripheral instead of calling didDisconnect, so without this the session outlived the radio:
+            // the UI said connected, the keep-alive wrote into a dead peripheral, and on poweredOn
+            // `didBond` / `connectHandshakeDone` / `whoop5SessionStarted` were still set, so the reconnect
+            // skipped SET_CLOCK, the offload kick and the keep-alive (history never synced until the next
+            // real drop). Runs before the banner switch below, which is unchanged.
+            if BLEManager.radioStateEndsLink(central.state) { tearDownLinkForRadio(central) }
             // #280: a non-poweredOn radio state used to be a SILENT return — the strap log showed only
             // "Central state: 3" and the UI just read "not connected", so a user whose Mac had denied NOOP
             // Bluetooth (.unauthorized == raw 3) had nothing explaining why no strap was ever found. This is
@@ -5926,6 +5974,7 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         liveHr = 0; liveRr = 0; offloadHr = 0; offloadRr = 0
         offloadGravity = 0; offloadResp = 0; offloadSkinTemp = 0; offloadSpo2 = 0; offloadChunks = 0
         linkUpSince = DispatchTime.now()
+        linkTornDownByRadio = nil   // a new link: any disconnect from here on is a real one
         standingConnectAt = nil     // #1413: a live link means no standing connect is outstanding
         restoredPeripheral = nil
         preparePeripheral(peripheral)
@@ -6069,6 +6118,13 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
     public func centralManager(_ central: CBCentralManager,
                                didDisconnectPeripheral peripheral: CBPeripheral,
                                error: Error?) {
+        // The radio teardown already ended this link (see `tearDownLinkForRadio`); a late real callback
+        // for it must not run the teardown again, and above all must not re-issue a connect.
+        if !radioTeardownInProgress, linkTornDownByRadio == peripheral.identifier, !state.connected {
+            linkTornDownByRadio = nil
+            log("Disconnect for the link already ended when Bluetooth went off - nothing more to do")
+            return
+        }
         Task { @MainActor in await collector?.flush() }
         // Reboot trail: if a user reboot is in flight, this drop is the strap acting on it. Log how long
         // the link stayed up (a real reboot drops within ~1-2 s) and cancel the no-disconnect watchdog. The
@@ -6095,7 +6151,9 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         // their state here - `realtimeArmedAt` is about to be cleared. `ended` carries the CBError CASE, not
         // just the OS sentence: the #617 branch already computes that code and the strap log never saw it.
         let endedReason: String
-        if intentionalDisconnect {
+        if radioTeardownInProgress {
+            endedReason = "bluetooth off or reset"
+        } else if intentionalDisconnect {
             endedReason = "intentional"
         } else if let cb = error as? CBError {
             endedReason = "CBError.\(cb.code)(\(cb.code.rawValue))"
@@ -6253,7 +6311,9 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         // Read it HERE, while `clientHelloWriteAt` and `didBond` are both still valid, and feed it in
         // through the same split the auth path uses. `countsAsBondRefusal` gates on family, so a 4.0 (which
         // bonds cleanly) can never latch the suppression.
-        if countsAsBondRefusal(isAuthRefusalStatus: false,
+        // Not when the radio itself went down: an outstanding hello then says nothing about the strap.
+        if !radioTeardownInProgress,
+           countsAsBondRefusal(isAuthRefusalStatus: false,
                                helloUnacked: clientHelloWriteAt != nil,
                                alreadyBonded: didBond,
                                family: selectedModel.deviceFamily) {
@@ -6332,7 +6392,15 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         puffinEventLog.close()   // release the event-log handle so the file is safe to export
         puffinDeepBufferLog.close()   // same for the high-rate deep-buffer log (#423)
         Task { @MainActor in await collector?.flushStandardHR(reason: .disconnect) }   // persist any buffered 0x2A37 HR
-        if autoReconnectPausedForBondLoop {
+        if radioTeardownInProgress {
+            // Nothing to re-issue with the radio down (a powered-off central refuses commands, and a pending
+            // connect died with it): poweredOn runs `connectFromSystem`, which reconnects from scratch with
+            // the give-up and the bond-loop pause intact (#78 hole-2).
+            log("Disconnected - Bluetooth off or reset; reconnecting once it is back on")
+            if TestCentre.active(.connection) {
+                state.append(log: "connect down (radio off/reset)", domain: .connection)
+            }
+        } else if autoReconnectPausedForBondLoop {
             // #747: the bond keeps being refused, so auto-reconnect is paused: we stop hammering a strap that
             // can't bond (the epitaph + paused hint were already surfaced when the give-up tripped). The user
             // re-arms it by tapping Connect. We do NOT schedule a rescan here.

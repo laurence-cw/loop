@@ -1,5 +1,7 @@
 import Foundation
+import StrandAnalytics
 import WhoopStore
+import WhoopProtocol
 
 /// Last night and this week's sleep, read through Noop's stored nightly rows and its own
 /// main-night resolver (`SleepView.mainNightSpan`), so Loop and Noop agree on which block is "the night".
@@ -13,7 +15,13 @@ struct LoopSleep: Equatable {
     }
 
     var asleepMin: Double?
-    var needMin: Double = 450
+    var needMin: Double = 540
+    /// Noop's fortnightly sleep-debt estimate against `needMin`, in minutes (0 = none).
+    var debtMin: Double = 0
+    /// Nights the debt estimate rests on; under 3 it isn't shown as a number yet.
+    var debtNights = 0
+    /// Last night's heart rate in 5-minute steps (unix seconds, bpm), bed to wake.
+    var overnightHR: [(ts: Int, bpm: Double)] = []
     /// Noop's own sleep score, 0-100.
     var score: Int?
     var lightMin: Double?
@@ -32,6 +40,15 @@ struct LoopSleep: Equatable {
     var stagesQuestionable = false
 
     static let empty = LoopSleep()
+
+    static func == (a: LoopSleep, b: LoopSleep) -> Bool {
+        a.asleepMin == b.asleepMin && a.needMin == b.needMin && a.debtMin == b.debtMin && a.score == b.score
+            && a.bed == b.bed && a.wake == b.wake && a.week == b.week && a.stagesQuestionable == b.stagesQuestionable
+            && a.overnightHR.count == b.overnightHR.count
+    }
+
+    /// The lowest 5-minute heart rate of the night and when it was.
+    var overnightLow: (ts: Int, bpm: Double)? { overnightHR.min { $0.bpm < $1.bpm } }
 
     var hasStages: Bool { (lightMin ?? 0) + (deepMin ?? 0) + (dreamMin ?? 0) > 0 }
 }
@@ -81,6 +98,15 @@ enum LoopSleepReader {
             out.stagesQuestionable = sparse || lowConfidence || day?.sleepHrOnly == true
         }
 
+        let ledger = LoopSleepNeed.debt(days: repo.days, needMin: out.needMin)
+        out.debtMin = ledger.magnitudeMin
+        out.debtNights = ledger.nightCount
+
+        if let bed = out.bed, let wake = out.wake, wake > bed {
+            let samples = await repo.hrSamples(from: bed, to: wake, limit: 60_000)
+            out.overnightHR = bucket(samples, from: bed, to: wake, step: 300)
+        }
+
         // This week, Monday first.
         var mondayCal = Calendar(identifier: .iso8601)
         mondayCal.timeZone = cal.timeZone
@@ -91,6 +117,21 @@ enum LoopSleepReader {
             out.week.append(.init(day: Repository.localDayKey(d), bed: s?.start, wake: s?.end))
         }
         return out
+    }
+
+    /// Mean heart rate per `step`-second slot, skipping empty slots and implausible readings, so the
+    /// line follows the night without one stray sample defining the low.
+    static func bucket(_ samples: [HRSample], from: Int, to: Int, step: Int) -> [(ts: Int, bpm: Double)] {
+        var sums: [Int: (Double, Int)] = [:]
+        for s in samples where s.ts >= from && s.ts <= to && (30...220).contains(s.bpm) {
+            let slot = (s.ts - from) / step
+            let c = sums[slot] ?? (0, 0)
+            sums[slot] = (c.0 + Double(s.bpm), c.1 + 1)
+        }
+        return sums.keys.sorted().compactMap { k in
+            guard let (sum, n) = sums[k], n >= 3 else { return nil }
+            return (from + k * step + step / 2, sum / Double(n))
+        }
     }
 
     /// The main night whose wake time falls on `day`.

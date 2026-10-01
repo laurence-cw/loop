@@ -176,6 +176,13 @@ enum WindDownNudge {
         }
     }
 
+    /// Update the sleep need the nudge is derived from (clamped to the same 5-11 h range the getter reads),
+    /// rescheduling if enabled. Lets a caller that computes a personal need keep the reminder in step with it.
+    static func setSleepNeedMinutes(_ minutes: Int) {
+        UserDefaults.standard.set(min(max(minutes, 5 * 60), 11 * 60), forKey: K.sleepNeed)
+        if isEnabled { schedule() }
+    }
+
     /// Update the earliest wake time the nudge is derived from, rescheduling if enabled.
     static func setWakeMinutes(_ minutes: Int) {
         UserDefaults.standard.set(min(max(minutes, 0), 24 * 60 - 1), forKey: K.wake)

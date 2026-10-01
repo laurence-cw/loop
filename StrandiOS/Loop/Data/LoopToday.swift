@@ -27,8 +27,8 @@ struct LoopToday: Equatable {
     var recovery: Recovery = .noData
     /// Minutes asleep last night, nil when there's no night yet.
     var sleepMin: Double?
-    /// The night's need in minutes (Noop's rule: recent mean, never below 7.5h).
-    var sleepNeedMin: Double = 450
+    /// The night's need in minutes, from `LoopSleepNeed` (the one need every Loop readout uses).
+    var sleepNeedMin: Double = 540
     /// Noop's own sleep score for last night (sleep_performance, 0-100), nil when not scored.
     var sleepScore: Int?
     /// Today's effort on Loop's 0-100 scale (Noop's native axis), nil when too few readings.
@@ -60,15 +60,12 @@ enum LoopTodayReader {
         case .noData: out.recovery = .noData
         }
 
-        // Sleep: last night's total against the same need rule CoupledView and SleepView use.
+        // Sleep: last night's total against Loop's one need (see LoopSleepNeed).
         if let asleep = day?.totalSleepMin, asleep > 0 { out.sleepMin = asleep }
-        if let need = day.flatMap({ repo.importedSleep[$0.day]?.needMin }), need > 0 {
-            out.sleepNeedMin = need
-        } else {
-            let banked = repo.days.compactMap(\.totalSleepMin).filter { $0 > 0 }
-            let mean = banked.isEmpty ? nil : banked.reduce(0, +) / Double(banked.count)
-            out.sleepNeedMin = max(450, mean ?? 450)
-        }
+        out.sleepNeedMin = LoopSleepNeed.minutes(days: repo.days,
+                                                 importedNeedMin: day.flatMap { repo.importedSleep[$0.day]?.needMin },
+                                                 age: profile.age)
+        LoopSleepNeed.syncReminder(needMin: out.sleepNeedMin)
 
         let rest = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
         out.sleepScore = rest.last(where: { $0.day == todayKey }).map { Int($0.value.rounded()) }
@@ -126,11 +123,10 @@ enum LoopPastDayReader {
         }
     }
 
-    static func read(repo: Repository, dayKeys: [String]) async -> [String: LoopToday] {
+    static func read(repo: Repository, dayKeys: [String], age: Int?) async -> [String: LoopToday] {
         let rest = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
         let stepsEst = await repo.exploreSeries(key: "steps_est", source: "my-whoop")
-        let banked = repo.days.compactMap(\.totalSleepMin).filter { $0 > 0 }
-        let meanNeed = max(450, banked.isEmpty ? 450 : banked.reduce(0, +) / Double(banked.count))
+        let need = LoopSleepNeed.minutes(days: repo.days, importedNeedMin: nil, age: age)
 
         var out: [String: LoopToday] = [:]
         for key in dayKeys {
@@ -138,7 +134,7 @@ enum LoopPastDayReader {
             let row = repo.days.last(where: { $0.day == key })
             t.recovery = row?.recovery.map { .scored(Int($0.rounded())) } ?? .noData
             if let asleep = row?.totalSleepMin, asleep > 0 { t.sleepMin = asleep }
-            t.sleepNeedMin = (repo.importedSleep[key]?.needMin).flatMap { $0 > 0 ? $0 : nil } ?? meanNeed
+            t.sleepNeedMin = (repo.importedSleep[key]?.needMin).flatMap { $0 > 0 ? $0 : nil } ?? need
             t.sleepScore = rest.last(where: { $0.day == key }).map { Int($0.value.rounded()) }
             t.effort = row?.strain
             t.steps = row?.steps ?? stepsEst.last(where: { $0.day == key }).map { Int($0.value.rounded()) }

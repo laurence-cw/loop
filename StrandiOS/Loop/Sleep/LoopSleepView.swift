@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Sleep, one tap in from Home. Headline: hours slept against hours needed. Then the stages, time
-/// awake and sleep quality. Then bedtime and wake-time consistency across the week.
+/// Sleep, one tap in from Home. Headline: hours slept against hours needed. Then tonight's bedtime and
+/// sleep debt, the stages, time awake and sleep quality, last night's heart rate, and bedtime and
+/// wake-time consistency across the week.
 struct LoopSleepView: View {
     @Binding var today: LoopToday
 
@@ -60,10 +61,23 @@ struct LoopSleepView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .modifier(LoopSoftTopEdge())
         .tint(LoopColor.text)
-        .task(id: repo.refreshSeq) {
+        // Re-read when the need settles too: Home may still be working it out when this screen opens,
+        // and the ring, the debt and tonight's bedtime must all use the same figure.
+        .task(id: "\(repo.refreshSeq)-\(today.sleepNeedMin)") {
             sleep = await LoopSleepReader.read(repo: repo, today: today)
             #if DEBUG
             if CommandLine.arguments.contains("--loop-preview-questionable-stages") { sleep.stagesQuestionable = true }
+            if let i = CommandLine.arguments.firstIndex(of: "--loop-preview-debt"), i + 1 < CommandLine.arguments.count,
+               let m = Double(CommandLine.arguments[i + 1]) { sleep.debtMin = m; sleep.debtNights = 14 }
+            if CommandLine.arguments.contains("--loop-preview-heart-first"), sleep.overnightHR.count < 12 {
+                // A synthetic night, 11pm to 7am: settles from the 60s to a low in the 40s, then rises.
+                let bed = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970) - 3600
+                sleep.bed = bed; sleep.wake = bed + 8 * 3600
+                sleep.overnightHR = (0..<96).map { i in
+                    let t = Double(i) / 95
+                    return (bed + i * 300, 62 - 16 * sin(.pi * min(t * 1.4, 1)) + 3 * sin(Double(i) / 3))
+                }
+            }
             if CommandLine.arguments.contains("--loop-preview-missing-night"), sleep.week.count > 1 {
                 sleep.week[1] = .init(day: sleep.week[1].day, bed: nil, wake: nil)
             }
@@ -75,8 +89,18 @@ struct LoopSleepView: View {
     /// Shown only once read, so real data never flashes as "No data" first.
     private var detail: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LoopStagesCard(sleep: sleep)
+            #if DEBUG
+            if CommandLine.arguments.contains("--loop-preview-heart-first"), sleep.overnightHR.count >= 12,
+               let bed = sleep.bed, let wake = sleep.wake {
+                LoopOvernightHeartCard(points: sleep.overnightHR, bed: bed, wake: wake).padding(.top, LoopSpace.l)
+            }
+            #endif
+            // What to do about it first: tonight's bedtime and the debt to catch up.
+            LoopTonightCard(needMin: today.sleepNeedMin, debtMin: sleep.debtMin, debtNights: sleep.debtNights)
                 .padding(.top, LoopSpace.l)
+
+            LoopStagesCard(sleep: sleep)
+                .padding(.top, LoopSpace.s)
 
             VStack(spacing: LoopSpace.s) {
                 LoopValueRow(title: "Time awake",
@@ -88,6 +112,12 @@ struct LoopSleepView: View {
                              divider: false)
             }
             .padding(.top, LoopSpace.xl)
+
+            // Only with enough of the night recorded to draw honestly (an hour of 5-minute points).
+            if sleep.overnightHR.count >= 12, let bed = sleep.bed, let wake = sleep.wake {
+                LoopOvernightHeartCard(points: sleep.overnightHR, bed: bed, wake: wake)
+                    .padding(.top, LoopSpace.xl)
+            }
 
             LoopSleepWeekCard(week: sleep.week)
                 .padding(.top, LoopSpace.xl)

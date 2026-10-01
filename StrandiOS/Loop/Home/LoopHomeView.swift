@@ -84,7 +84,7 @@ struct LoopHomeView: View {
                 Page(key: p.key, date: p.date, isToday: i == LoopPastDayReader.span - 1)
             }
             today = await LoopTodayReader.read(repo: repo, profile: profile)
-            past = await LoopPastDayReader.read(repo: repo, dayKeys: newPages.dropLast().map(\.key))
+            past = await LoopPastDayReader.read(repo: repo, dayKeys: newPages.dropLast().map(\.key), age: profile.age)
             #if DEBUG
             if let preview = LoopPreviewState.requested { today = preview.apply(to: today) }
             if CommandLine.arguments.contains("--loop-preview-days") { past = LoopPreviewState.pastDays(newPages) }

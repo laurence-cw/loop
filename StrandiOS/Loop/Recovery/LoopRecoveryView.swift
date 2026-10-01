@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// Recovery, one tap in from Home. Headline: the orb and what today means. Then heart variability
-/// and resting heart rate against your normal. Then breathing and temperature, for the curious.
+/// Recovery, one tap in from Home. Headline: the orb and what today means. Then what moved it, heart
+/// variability and resting heart rate against your normal, stress through the day, breathing and
+/// temperature for the curious, and tomorrow's estimate.
 struct LoopRecoveryView: View {
     @Binding var today: LoopToday
 
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var repo: Repository
     @State private var recovery = LoopRecovery.empty
+    @State private var insights = LoopRecoveryInsights.empty
     @State private var loaded = false
     @State private var titleScrolledAway = false
 
@@ -27,6 +29,16 @@ struct LoopRecoveryView: View {
                 .padding(.top, LoopSpace.xs)
                 .accessibilityAddTraits(.isHeader)
 
+                #if DEBUG
+                // DEBUG-only `--loop-preview-lower-cards`: the lower cards first, for screenshots.
+                if CommandLine.arguments.contains("--loop-preview-lower-cards") {
+                    LoopStressCard(hours: insights.stressHours, dayMean: insights.stressDayMean,
+                                   peakHour: insights.stressPeakHour).padding(.top, LoopSpace.s)
+                    if let f = insights.forecast {
+                        LoopForecastCard(forecast: f, needMin: today.sleepNeedMin).padding(.top, LoopSpace.s)
+                    }
+                }
+                #endif
                 LoopOrb(recovery: today.recovery, diameter: 200)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, LoopSpace.xl)
@@ -82,8 +94,12 @@ struct LoopRecoveryView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .modifier(LoopSoftTopEdge())
         .tint(LoopColor.text)
-        .task(id: repo.refreshSeq) {
+        .task(id: "\(repo.refreshSeq)-\(today.sleepNeedMin)") {
             recovery = LoopRecoveryReader.read(repo: repo)
+            insights = await LoopRecoveryInsightsReader.read(repo: repo, today: today)
+            #if DEBUG
+            if CommandLine.arguments.contains("--loop-preview-insights") { insights = .preview }
+            #endif
             withAnimation(.easeOut(duration: 0.3)) { loaded = true }
         }
     }
@@ -91,6 +107,12 @@ struct LoopRecoveryView: View {
     /// The measures, shown only once read, so real data never flashes as "No data" first.
     private var measures: some View {
         VStack(alignment: .leading, spacing: 0) {
+                // Why first: what moved today's score, from Noop's own breakdown.
+                if !insights.drivers.isEmpty {
+                    LoopDriversCard(drivers: insights.drivers, tint: tint)
+                        .padding(.top, LoopSpace.l)
+                }
+
                 VStack(spacing: LoopSpace.s) {
                     LoopVitalCard(
                         title: "Heart variability",
@@ -103,7 +125,11 @@ struct LoopRecoveryView: View {
                         vital: recovery.restingHeartRate,
                         glow: tint)
                 }
-                .padding(.top, LoopSpace.l)
+                .padding(.top, insights.drivers.isEmpty ? LoopSpace.l : LoopSpace.s)
+
+                LoopStressCard(hours: insights.stressHours, dayMean: insights.stressDayMean,
+                               peakHour: insights.stressPeakHour)
+                    .padding(.top, LoopSpace.s)
 
                 VStack(spacing: LoopSpace.s) {
                     LoopCheckRow(
@@ -126,6 +152,12 @@ struct LoopRecoveryView: View {
                     .padding(.top, LoopSpace.m)
                 }
                 .padding(.top, LoopSpace.xl)
+
+                // Only once Noop has enough scored nights to anchor an estimate honestly.
+                if let f = insights.forecast, f.confidence != .calibrating {
+                    LoopForecastCard(forecast: f, needMin: today.sleepNeedMin)
+                        .padding(.top, LoopSpace.xl)
+                }
         }
         .transition(.opacity)
     }

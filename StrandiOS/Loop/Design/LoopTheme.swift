@@ -18,6 +18,11 @@ enum LoopColor {
 
     /// Sleep. Always this colour.
     static let signal = Color(loopHex: 0x4A63FF)
+    /// Sleep stage tints, all from the Signal family: light reads clearly against Surface,
+    /// dream is the palest, deep is Signal itself. Separated by gaps in the stages bar.
+    static let stageLight = Color(loopHex: 0x8A96E8)
+    static let stageDeep = signal
+    static let stageDream = Color(loopHex: 0xC7CEFF)
     /// Activity. Always this colour.
     static let pulse = Color(loopHex: 0xE0379A)
     /// Recovery, good day.

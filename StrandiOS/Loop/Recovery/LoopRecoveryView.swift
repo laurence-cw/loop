@@ -7,14 +7,11 @@ struct LoopRecoveryView: View {
 
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var repo: Repository
-    @AppStorage("selectedWhoopModel") private var selectedModelRaw = ""
     @State private var recovery = LoopRecovery.empty
     @State private var loaded = false
     @State private var titleScrolledAway = false
 
-    private var isWhoop5: Bool {
-        model.whoop5Detected || selectedModelRaw == WhoopModel.whoop5mg.rawValue
-    }
+    private var isWhoop5: Bool { LoopStrap.isWhoop5(model: model) }
 
     private var tint: Color {
         today.recovery.score.map { RecoveryBand(score: $0).colour } ?? LoopColor.muted

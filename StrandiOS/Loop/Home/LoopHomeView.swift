@@ -13,6 +13,7 @@ struct LoopHomeView: View {
     @State private var today = LoopToday.empty
     @State private var showFindStrap = false
     @State private var openRecovery = false
+    @State private var openSleep = false
     private static let rowsAnchor = "loop.home.rows"
 
     private var status: LoopStatus {
@@ -55,10 +56,12 @@ struct LoopHomeView: View {
             #if DEBUG
             if let preview = LoopPreviewState.requested { today = preview.apply(to: today) }
             if CommandLine.arguments.contains("--loop-open-recovery") { openRecovery = true }
+            if CommandLine.arguments.contains("--loop-open-sleep") { openSleep = true }
             #endif
         }
         .refreshable { model.ble.syncNow() }
         .navigationDestination(isPresented: $openRecovery) { LoopRecoveryView(today: $today) }
+        .navigationDestination(isPresented: $openSleep) { LoopSleepView(today: $today) }
         .sheet(isPresented: $showFindStrap) {
             LoopFindStrapSheet(status: status)
                 .presentationDetents([.medium])
@@ -150,7 +153,7 @@ struct LoopHomeView: View {
 
     // MARK: Below the fold
 
-    // Sleep and Activity open their sections once those screens are built.
+    // Activity opens its section once that screen is built.
     private var rows: some View {
         VStack(spacing: LoopSpace.s) {
             Button { openRecovery = true } label: {
@@ -158,8 +161,12 @@ struct LoopHomeView: View {
                                word: recoveryWord, value: today.recovery.score.map { "\($0)" }, opens: true)
             }
             .buttonStyle(LoopPressStyle())
-            LoopSectionRow(symbol: "moon.fill", title: "Sleep", colour: LoopColor.signal,
-                           word: sleepWord, value: today.sleepMin.map { LoopFormat.duration($0 * 60) })
+            Button { openSleep = true } label: {
+                LoopSectionRow(symbol: "moon.fill", title: "Sleep", colour: LoopColor.signal,
+                               word: sleepWord, value: today.sleepMin.map { LoopFormat.duration($0 * 60) },
+                               opens: true)
+            }
+            .buttonStyle(LoopPressStyle())
             LoopSectionRow(symbol: "figure.walk", title: "Activity", colour: LoopColor.pulse,
                            word: effortWord, value: today.effort.map { "\(Int($0.rounded()))" },
                            detail: today.steps.map { "\(LoopFormat.steps($0)) steps" })

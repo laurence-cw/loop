@@ -160,7 +160,7 @@ A black-with-light palette: two neutrals for ground and surface, two text tones,
 **Character:** The wide, expanded face at a light weight makes the numbers feel like quiet, grown-up kit: confident without shouting. The owner chose this lighter cut over the brand book's original Bold/Semibold on 2026-10-01, because the heavy weights read as too bold and not grown up. Plain SF Pro keeps the sentences calm and readable. Every style follows Dynamic Type. The two fixed number sizes, the 72pt hero and the 22pt orb word, scale through @ScaledMetric and shrink to fit inside the orb.
 
 ### Hierarchy
-- **Hero** (Expanded Light 300, 72pt, monospaced digits): the single Recovery score inside the orb. One per screen.
+- **Hero** (Expanded Light 300, 72pt, monospaced digits): the single Recovery score inside the orb, on Home and Recovery. Section screens with their own hero use the section-hero variant (see Sleep Ring). One hero per screen.
 - **Headline number** (Expanded Light 300, 40pt, monospaced digits): a secondary big figure, such as the "2/4" nights count in the learning orb.
 - **Title** (Expanded Light 300, 28pt, the title text style): screen and sheet titles.
 - **Orb word** (Expanded Regular 400, 22pt, scaled, sentence case): the Recovery word directly under the hero, in the band colour.
@@ -235,6 +235,15 @@ Pushed from Home with the system back button. The scroll view uses iOS 26's soft
 ### Vital Card (range bar)
 A Surface card with the section's leading glow, full width. The title sits in Muted Body, with the plain word beneath it at row-value size in Text ("Normal for you", "Higher than normal"). Below that is the range bar: a 6pt Line track, the normal band (baseline ± one sigma, Noop's |z| ≤ 1 rule) in Muted at 45%, and a 16pt Text dot with a 3pt Surface ring. The dot starts at the band's centre and eases to the value with LoopMotion.fill. Directly under the bar, 8pt below, the number sits at Meta Text on the left and "Your normal a–b" at Meta Muted on the right. The Explainer comes last. On an unreliable strap, the card shows only the title plus "Not reliable on this strap yet." in Explainer Muted.
 
+### Sleep Ring (section hero)
+On the Sleep screen, the hero is a 220pt Signal ring (10pt, round cap, Line track, no glow). It starts at the bottom and fills clockwise up the left, the way Home's Sleep arc fills the tank. Inside it, the duration sits in Expanded Light at 44pt (scaled). This is the section-screen variant of the hero: the 72pt hero rule is for the Recovery orb, which owns the most important number. Under it: "of Xh needed" in Meta Muted, and Noop's sleep-score word in Signal at 24pt Expanded Regular. That size is large text, so Signal's ~4.3:1 on Night passes. The duration uses a numeric content transition.
+
+### Stages Bar
+One 12pt bar split by each stage's share of the night, with 3pt gaps between segments. Light is Stage Light #8A96E8 (about 7:1 on Surface), deep is Signal #4A63FF, and dream is Stage Dream #C7CEFF, the palest. They are three tints of the Signal family, told apart by lightness and the gaps between them, and each is labelled in its own line. Each stage then gets its own line: a swatch, the name and Explainer, and its duration at row value. Stage minutes are rounded with largest-remainder, so they always add up to the night's total. On a 5.0 strap the card shows only "Not reliable on this strap yet."
+
+### Week Chart (sleep window)
+Monday to Sunday. Each night is a 10pt Signal capsule running from bedtime (top) to wake (bottom), on faint 2pt Line guides. The axis covers the earliest bed to the latest wake, padded, and is never narrower than 9pm–9am. Two round-hour labels in Meta Muted are placed by the same scale as the bars. Day letters are in Meta: Text for days so far, Muted for days still to come. A past night with nothing recorded reads "No data" in Meta Muted; it is never drawn as zero. Future days are left empty. One sentence above the chart covers bedtime and wake-time steadiness, and only appears after three or more nights. It is never a telling-off.
+
 ### Check Row
 For the "Normal / A bit off" measures. Not a card: a title in Body on the left, the word at row-value size on the right on the same baseline, and the Explainer beneath. Line hairlines go between rows only, never after the last one.
 
@@ -248,7 +257,7 @@ Two arcs around the Recovery orb. Sleep (Signal) runs bottom to top on the left,
 ### Do:
 - **Do** take every colour, size and duration from `LoopTheme.swift`, and only from there.
 - **Do** pair every score with its word: Charged / Steady / Low for Recovery, Great / Good / OK / Low for Sleep and Effort.
-- **Do** keep one hero number per screen, at 72pt Expanded Light with monospaced digits.
+- **Do** keep one hero number per screen. The Recovery orb's score is 72pt Expanded Light with monospaced digits; a section screen's own hero (such as the Sleep ring's duration) is the smaller section-hero variant.
 - **Do** mark each section with its one SF Symbol: bolt.fill for Recovery, moon.fill for Sleep, figure.walk for Activity.
 - **Do** keep glow at 15% (card edge) or 25% (orb), one colour per card.
 - **Do** show missing data as "No data" or "No score" in Muted, never as zero.

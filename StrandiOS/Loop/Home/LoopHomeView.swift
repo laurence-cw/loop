@@ -25,6 +25,7 @@ struct LoopHomeView: View {
     @State private var openActivity = false
     @State private var openSettings = false
     @State private var openBreathe = false
+    @State private var openWeek = false
     private static let rowsAnchor = "loop.home.rows"
 
     struct Page: Equatable {
@@ -100,6 +101,7 @@ struct LoopHomeView: View {
             if CommandLine.arguments.contains("--loop-open-activity") { openActivity = true }
             if CommandLine.arguments.contains("--loop-open-settings") { openSettings = true }
             if CommandLine.arguments.contains("--loop-open-breathe") { openBreathe = true }
+            if CommandLine.arguments.contains("--loop-open-week") { openWeek = true }
             if let i = CommandLine.arguments.firstIndex(of: "--loop-day-back"), i + 1 < CommandLine.arguments.count,
                let back = Int(CommandLine.arguments[i + 1]), back < pages.count {
                 let key = pages[pages.count - 1 - back].key
@@ -125,6 +127,7 @@ struct LoopHomeView: View {
         .navigationDestination(isPresented: $openActivity) { LoopActivityView(today: $today) }
         .navigationDestination(isPresented: $openSettings) { LoopSettingsView() }
         .navigationDestination(isPresented: $openBreathe) { LoopBreatheView() }
+        .navigationDestination(isPresented: $openWeek) { LoopWeekView(today: $today) }
         .sheet(isPresented: $showFindStrap) {
             LoopFindStrapSheet(status: status)
                 .presentationDetents([.medium, .large])
@@ -337,6 +340,13 @@ struct LoopHomeView: View {
             }
             .buttonStyle(LoopPressStyle())
             .disabled(!opens)
+            // The weekly round-up: the same whichever day is in view, so it always opens.
+            Button { openWeek = true } label: {
+                LoopSectionRow(symbol: "calendar", title: "Your week", colour: LoopColor.text,
+                               word: nil, value: nil, detail: "Best night, hardest day, averages",
+                               opens: true, quiet: true)
+            }
+            .buttonStyle(LoopPressStyle())
         }
         .animation(.easeInOut(duration: 0.25), value: selected)
     }
@@ -433,6 +443,8 @@ struct LoopSectionRow: View {
     var detail: String? = nil
     /// Shows a chevron when the row opens its section.
     var opens: Bool = false
+    /// A row with no value to show (e.g. the weekly round-up): no "No data" either.
+    var quiet: Bool = false
 
     var body: some View {
         HStack(spacing: LoopSpace.s) {
@@ -462,7 +474,7 @@ struct LoopSectionRow: View {
                     (Text(word.map { "\($0) " } ?? "").foregroundStyle(colour)
                      + Text(value).foregroundStyle(LoopColor.text))
                         .font(LoopFont.rowValue)
-                } else {
+                } else if !quiet {
                     Text("No data")
                         .font(LoopFont.rowValue)
                         .foregroundStyle(LoopColor.muted)

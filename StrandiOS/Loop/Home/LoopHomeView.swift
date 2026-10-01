@@ -16,6 +16,7 @@ struct LoopHomeView: View {
     @State private var openSleep = false
     @State private var openActivity = false
     @State private var openSettings = false
+    @State private var openBreathe = false
     private static let rowsAnchor = "loop.home.rows"
 
     private var status: LoopStatus {
@@ -61,6 +62,7 @@ struct LoopHomeView: View {
             if CommandLine.arguments.contains("--loop-open-sleep") { openSleep = true }
             if CommandLine.arguments.contains("--loop-open-activity") { openActivity = true }
             if CommandLine.arguments.contains("--loop-open-settings") { openSettings = true }
+            if CommandLine.arguments.contains("--loop-open-breathe") { openBreathe = true }
             #endif
         }
         .refreshable { model.ble.syncNow() }
@@ -68,6 +70,7 @@ struct LoopHomeView: View {
         .navigationDestination(isPresented: $openSleep) { LoopSleepView(today: $today) }
         .navigationDestination(isPresented: $openActivity) { LoopActivityView(today: $today) }
         .navigationDestination(isPresented: $openSettings) { LoopSettingsView() }
+        .navigationDestination(isPresented: $openBreathe) { LoopBreatheView() }
         .sheet(isPresented: $showFindStrap) {
             LoopFindStrapSheet(status: status)
                 .presentationDetents([.medium])

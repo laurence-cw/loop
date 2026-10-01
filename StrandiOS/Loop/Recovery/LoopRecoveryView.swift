@@ -38,6 +38,23 @@ struct LoopRecoveryView: View {
                     .foregroundStyle(LoopColor.text)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if case .scored(let s) = today.recovery, RecoveryBand(score: s) == .low {
+                    NavigationLink { LoopBreatheView() } label: {
+                        HStack(spacing: LoopSpace.s) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("About two minutes of slow breathing").font(LoopFont.body).foregroundStyle(LoopColor.text)
+                                Text("It can help your body settle.").font(LoopFont.explainer).foregroundStyle(LoopColor.muted)
+                            }
+                            Spacer(minLength: LoopSpace.xs)
+                            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(LoopColor.muted)
+                        }
+                        .padding(LoopSpace.cardPadding)
+                        .background(LoopCardBackground(glow: LoopColor.glow))
+                    }
+                    .buttonStyle(LoopPressStyle())
+                    .padding(.top, LoopSpace.m)
+                }
+
                 if loaded { measures }
             }
             .padding(.horizontal, LoopSpace.edge)
@@ -92,6 +109,15 @@ struct LoopRecoveryView: View {
                         explainer: "A big jump can mean you're coming down with something.",
                         state: temperatureState,
                         divider: false)
+                    NavigationLink { LoopBreatheView() } label: {
+                        HStack {
+                            Text("Breathe").font(LoopFont.rowTitle).foregroundStyle(LoopColor.text)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(LoopColor.muted)
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .padding(.top, LoopSpace.m)
                 }
                 .padding(.top, LoopSpace.xl)
         }

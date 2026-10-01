@@ -240,7 +240,8 @@ targets:
       path: StrandiOS/Resources/Info.plist
       properties:
         CFBundleName: NOOP
-        CFBundleDisplayName: NOOP
+        # Loop: the name under the icon on the boys' phones.
+        CFBundleDisplayName: Loop
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # Surfaces APP_GROUP_ID to runtime (WidgetSnapshot.suiteName) so the App Group id isn't
@@ -343,7 +344,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).noop
         PRODUCT_NAME: "NOOP Staging"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_APPICON_NAME: LoopIcon  # Loop: the "Recharge" mark. Noop's own sets still ship.
         # Ship every *.appiconset (not just the primary AppIcon) so the alternate "AppIcon-Navy"
         # set is compiled into the bundle and is available to UIApplication.setAlternateIconName.
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES

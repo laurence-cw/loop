@@ -122,23 +122,28 @@ struct LoopHomeView: View {
 
     // MARK: Above the fold
 
-    /// Pill at the top; the day, the ring, its two values and the sentence sit together as one group,
+    /// Logo and pill at the top; the day, the ring, its two values and the sentence sit together as one group,
     /// centred in what's left. The ring, values and sentence page sideways together, one day per page.
     private var hero: some View {
         VStack(spacing: 0) {
-            LoopStatusPill(status: status, battery: live.batteryPct) { showFindStrap = true }
-                .frame(maxWidth: .infinity)
-                .overlay(alignment: .trailing) {
-                    Button { openSettings = true } label: {
-                        Image(systemName: "gearshape")
-                            .font(.body)
-                            .foregroundStyle(LoopColor.muted)
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("Settings")
-                    .padding(.trailing, LoopSpace.xs)
+            // The logo on the left, Settings on the right; the strap's status pill sits under them.
+            HStack {
+                LoopLogo()
+                Spacer(minLength: LoopSpace.s)
+                Button { openSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.body)
+                        .foregroundStyle(LoopColor.muted)
+                        .frame(width: 44, height: 44)
                 }
-                .padding(.top, LoopSpace.xs)
+                .accessibilityLabel("Settings")
+            }
+            .padding(.leading, LoopSpace.s)
+            .padding(.trailing, LoopSpace.xs)
+            .padding(.top, LoopSpace.xs)
+
+            LoopStatusPill(status: status, battery: live.batteryPct) { showFindStrap = true }
+                .padding(.top, LoopSpace.s)
 
             if status == .bluetoothOff {
                 LoopBluetoothCard()

@@ -1002,6 +1002,14 @@ public final class BLEManager: NSObject, ObservableObject {
     /// CoreBluetooth may still deliver does not run the teardown a second time. Cleared by the next
     /// didConnect, after which any disconnect is a real one again.
     private var linkTornDownByRadio: UUID?
+    /// One-shot deadline armed at didConnect for a link that has not yet bonded (see `setupStallVerdict`).
+    private var setupDeadline: DispatchWorkItem?
+    /// Consecutive links NOOP itself bounced for stalling in setup; reset by a bond, by data arriving, or by
+    /// the user's own Connect / Disconnect.
+    private var setupStallBounces = 0
+    /// True between NOOP cancelling a stalled link and its didDisconnect, so that drop is reported as
+    /// NOOP's and is not fed to the strap-refusal detectors.
+    private var setupStallBounceInProgress = false
     /// #391: pending one-shot escalation armed when the central reports `.unauthorized` while the TCC
     /// grant reads as granted (the macOS cold-start settling window). Canceled by ANY later state
     /// callback (the settle resolved); if it fires instead, the state never settled — the wedged-grant
@@ -1632,6 +1640,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// silently un-pause the give-up and re-run the full refusal hammer, forever, one burst per event
     /// (#78 hole-2; Android's onBluetoothRadioOn always had the correct one-attempt-latched shape).
     public func connect(model: WhoopModel = .persisted) {
+        setupStallBounces = 0   // the user acted (closed the WHOOP app, pairing mode): a fresh set of retries
         // #747/#750: re-arm on the user's explicit retry: clear the give-up streak + pause so this fresh
         // attempt isn't immediately re-paused and the auto-reconnect works again if it bonds.
         if autoReconnectPausedForBondLoop {
@@ -1789,6 +1798,8 @@ public final class BLEManager: NSObject, ObservableObject {
 
     public func disconnect() {
         intentionalDisconnect = true
+        setupStallBounces = 0
+        setupDeadline?.cancel(); setupDeadline = nil
         cancelScanFallback()
         // A user-initiated teardown is a clean slate: clear any #80 marginal-radio fallback so the next
         // (manual) reconnect attempts the full R10/R11 stream again rather than inheriting old suspicion.
@@ -5757,6 +5768,69 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(BLEManager.unauthorizedSettleSeconds), execute: work)
     }
 
+    /// How long a fresh link may sit connected with no bond and no data before NOOP treats it as stalled.
+    /// Healthy setups bond within a few seconds; this is far past that, and far below "forever".
+    nonisolated static let setupDeadlineSeconds: TimeInterval = 45
+    /// Bounces before NOOP stops retrying on its own and shows its pairing guidance instead, so a strap held
+    /// by another app is not reconnected every 45 s indefinitely.
+    nonisolated static let setupStallBounceLimit = 3
+
+    enum SetupStallVerdict: Equatable { case leave, bounce, giveUp }
+
+    /// What to do when a link's setup deadline fires.
+    ///
+    /// A link that connects but never bonds and never delivers anything used to sit on "Connecting…"
+    /// indefinitely: service discovery failing, or the bond write refused (a 4.0 still held by the official
+    /// WHOOP app, a stale pairing), only logs and returns, and the liveness watchdog lives in the keep-alive,
+    /// which starts only after a bond. With the link up, nothing reconnects either.
+    ///
+    /// `.leave` whenever the link is no longer the one armed for, has bonded, or has delivered ANY
+    /// notification since connecting. The data exemption is what keeps this off the #1635 hello-suppressed
+    /// 5/MG, which deliberately runs unbonded on live HR (see AGENTS.md on `didBond`): it is not stalled,
+    /// and bouncing it would undo the suppression. Otherwise `.bounce` (cancel, so the ordinary disconnect
+    /// path reconnects) up to the limit, then `.giveUp`: stay connected and show guidance once.
+    nonisolated static func setupStallVerdict(sameLinkStillConnected: Bool, bonded: Bool, dataSinceConnect: Bool,
+                                              bouncesSoFar: Int, limit: Int) -> SetupStallVerdict {
+        guard sameLinkStillConnected, !bonded, !dataSinceConnect else { return .leave }
+        return bouncesSoFar < limit ? .bounce : .giveUp
+    }
+
+    /// Guidance for a strap that keeps connecting without ever finishing setup. Same shape as the other
+    /// pairing hints: what is happening, then the steps that fix it.
+    nonisolated static let setupStallHint = "NOOP keeps connecting to your strap but it never finishes setting up. Usually the official WHOOP app is still holding it, or your phone has an old pairing. To fix it: (1) fully close the WHOOP app, (2) if your strap is listed in Bluetooth settings, tap it and choose Forget This Device, (3) on a 5.0/MG, tap the band repeatedly until the LEDs flash blue (pairing mode), then reconnect in NOOP."
+
+    /// Arm the setup deadline for the link that just connected (see `setupStallVerdict`).
+    private func armSetupDeadline(for p: CBPeripheral) {
+        setupDeadline?.cancel()
+        let gen = connectGeneration
+        let connectedAt = Date()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.setupDeadline = nil
+            let verdict = BLEManager.setupStallVerdict(
+                sameLinkStillConnected: self.state.connected && self.connectGeneration == gen
+                    && self.peripheral?.identifier == p.identifier,
+                bonded: self.didBond,
+                dataSinceConnect: self.lastDataAt > connectedAt,
+                bouncesSoFar: self.setupStallBounces,
+                limit: BLEManager.setupStallBounceLimit)
+            switch verdict {
+            case .leave:
+                if self.didBond || self.lastDataAt > connectedAt { self.setupStallBounces = 0 }
+            case .bounce:
+                self.setupStallBounces += 1
+                self.log("Setup stalled: connected \(Int(BLEManager.setupDeadlineSeconds))s with no bond and no data - reconnecting (\(self.setupStallBounces) of \(BLEManager.setupStallBounceLimit))")
+                self.setupStallBounceInProgress = true
+                self.central.cancelPeripheralConnection(p)
+            case .giveUp:
+                self.log("Setup stalled again after \(BLEManager.setupStallBounceLimit) reconnects - staying connected and showing pairing guidance instead of retrying")
+                if self.state.pairingHint == nil { self.state.pairingHint = BLEManager.setupStallHint }
+            }
+        }
+        setupDeadline = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + BLEManager.setupDeadlineSeconds, execute: work)
+    }
+
     /// The radio states that end any link this central holds: Bluetooth switched off, and bluetoothd
     /// resetting (its crash/restart drops every connection). `.unauthorized` / `.unsupported` /
     /// `.unknown` are left to the existing handling below.
@@ -6031,6 +6105,7 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
             state.append(log: "connect up gen=\(connectGeneration) "
                 + "latencyMs=\(latencyMs.map(String.init) ?? "?") uptimeStart=\(nowUnix)", domain: .connection)
         }
+        armSetupDeadline(for: peripheral)
         discoverPrimaryServices(on: peripheral)
     }
 
@@ -6153,6 +6228,8 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         let endedReason: String
         if radioTeardownInProgress {
             endedReason = "bluetooth off or reset"
+        } else if setupStallBounceInProgress {
+            endedReason = "setup stalled (reconnected by NOOP)"
         } else if intentionalDisconnect {
             endedReason = "intentional"
         } else if let cb = error as? CBError {
@@ -6312,7 +6389,8 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         // through the same split the auth path uses. `countsAsBondRefusal` gates on family, so a 4.0 (which
         // bonds cleanly) can never latch the suppression.
         // Not when the radio itself went down: an outstanding hello then says nothing about the strap.
-        if !radioTeardownInProgress,
+        // Nor when NOOP cancelled a stalled setup itself: that drop is ours, not the strap refusing.
+        if !radioTeardownInProgress, !setupStallBounceInProgress,
            countsAsBondRefusal(isAuthRefusalStatus: false,
                                helloUnacked: clientHelloWriteAt != nil,
                                alreadyBonded: didBond,
@@ -6385,6 +6463,9 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         backfillTimer = nil
         keepAliveTimer?.cancel()
         keepAliveTimer = nil
+        setupDeadline?.cancel()
+        setupDeadline = nil
+        setupStallBounceInProgress = false   // read above; the drop it marked is now handled
         resetCharacteristics()
         // Best-effort, fire-and-forget: nothing below depends on this write completing, and the
         // recorder keeps writing the same session file after reconnect (#652: encode+write off-main).

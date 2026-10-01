@@ -256,6 +256,9 @@ Today's detected or recorded activities that have already started, as a quiet li
 ### Week Bars (effort / steps)
 Two charts, Monday to Sunday, each with a single series and its title in Body. Bars sit on a 64pt plot. Today is full Pulse, and past days are Pulse at 55%. A past day with nothing recorded reads "No data" in Meta Muted. Days still to come are empty, with Muted day letters. No figure for today is repeated in the chart headers.
 
+### List Screens (Settings, Advanced, About)
+These use iOS inset-grouped lists in the platform's own grammar, never custom cards or controls. Rows are Surface on a Night ground; the system controls are dark. Switches and links take the Charged tint. The title is the Inline title in a principal toolbar item. Section headers are Regular Muted Body in sentence case (`LoopListHeader`), and footers are system footnote. The shared modifier is `loopListChrome(title:)`. Settings must fit one iPhone screen; Advanced and About may scroll. Times in footers use the phone's own clock format (`Date.formatted(time: .shortened)`), so they match the time pickers. Any line that states when something will happen (next buzz, bedtime reminder) is resolved from the same function that schedules it, on one clock.
+
 ### Check Row
 For the "Normal / A bit off" measures. Not a card: a title in Body on the left, the word at row-value size on the right on the same baseline, and the Explainer beneath. Line hairlines go between rows only, never after the last one.
 

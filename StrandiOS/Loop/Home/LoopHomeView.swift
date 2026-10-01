@@ -15,6 +15,7 @@ struct LoopHomeView: View {
     @State private var openRecovery = false
     @State private var openSleep = false
     @State private var openActivity = false
+    @State private var openSettings = false
     private static let rowsAnchor = "loop.home.rows"
 
     private var status: LoopStatus {
@@ -59,12 +60,14 @@ struct LoopHomeView: View {
             if CommandLine.arguments.contains("--loop-open-recovery") { openRecovery = true }
             if CommandLine.arguments.contains("--loop-open-sleep") { openSleep = true }
             if CommandLine.arguments.contains("--loop-open-activity") { openActivity = true }
+            if CommandLine.arguments.contains("--loop-open-settings") { openSettings = true }
             #endif
         }
         .refreshable { model.ble.syncNow() }
         .navigationDestination(isPresented: $openRecovery) { LoopRecoveryView(today: $today) }
         .navigationDestination(isPresented: $openSleep) { LoopSleepView(today: $today) }
         .navigationDestination(isPresented: $openActivity) { LoopActivityView(today: $today) }
+        .navigationDestination(isPresented: $openSettings) { LoopSettingsView() }
         .sheet(isPresented: $showFindStrap) {
             LoopFindStrapSheet(status: status)
                 .presentationDetents([.medium])
@@ -78,6 +81,17 @@ struct LoopHomeView: View {
     private var hero: some View {
         VStack(spacing: 0) {
             LoopStatusPill(status: status, battery: live.batteryPct) { showFindStrap = true }
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .trailing) {
+                    Button { openSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .font(.body)
+                            .foregroundStyle(LoopColor.muted)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Settings")
+                    .padding(.trailing, LoopSpace.xs)
+                }
                 .padding(.top, LoopSpace.xs)
 
             if status == .bluetoothOff {

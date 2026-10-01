@@ -15,7 +15,7 @@ struct LoopStrapGauges: View {
                                             hasStrap: !(model.deviceRegistry?.devices.isEmpty ?? true),
                                             now: context.date)
             Button { showFindStrap = true } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: LoopSpace.xs) {
                     LoopSyncGauge(status: status, now: context.date)
                     LoopBatteryGauge(percent: previewBattery?.pct ?? battery,
                                      charging: previewBattery?.charging ?? (live.charging == true),
@@ -82,7 +82,7 @@ struct LoopSyncGauge: View {
     let now: Date
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             icon
             Text(label)
                 .font(Self.font)
@@ -106,7 +106,7 @@ struct LoopSyncGauge: View {
             }
         }()
         let image = Image(systemName: symbol)
-            .font(.subheadline.weight(.medium))
+            .font(.caption.weight(.medium))
             .foregroundStyle(status.needsHelp ? LoopColor.text : LoopColor.muted)
         if case .syncing = status, #available(iOS 18.0, *) {
             image.symbolEffect(.rotate, options: .repeat(.continuous))
@@ -125,8 +125,8 @@ struct LoopSyncGauge: View {
         }
     }
 
-    /// Big enough to read at a glance: subheadline, Expanded, monospaced digits.
-    static let font = Font.system(.subheadline, weight: .medium).width(.expanded).monospacedDigit()
+    /// Small and quiet: caption2, Expanded, monospaced digits.
+    static let font = Font.system(.caption2, weight: .medium).width(.expanded).monospacedDigit()
 
     /// "Now", "12m", "3h", "2d": how long since the last sync.
     static func age(_ d: Date, now: Date) -> String {
@@ -158,7 +158,7 @@ struct LoopBatteryGauge: View {
     let charging: Bool
     let live: Bool
 
-    @ScaledMetric(relativeTo: .subheadline) private var width: CGFloat = 27
+    @ScaledMetric(relativeTo: .caption2) private var width: CGFloat = 19
     private var bodySize: CGSize { CGSize(width: width, height: width * 0.5) }
 
     var body: some View {
@@ -183,7 +183,7 @@ struct LoopBatteryGauge: View {
             // Charging: a bolt beside the battery, in Charged, so it shows at any level.
             if charging {
                 Image(systemName: "bolt.fill")
-                    .font(.caption.weight(.bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(LoopColor.charged)
             }
             Text(percent.map { "\(Int($0.rounded()))%" } ?? "–")
@@ -201,6 +201,18 @@ extension View {
     /// The strap gauges at the trailing end of a pushed screen's bar.
     func loopStrapGaugesToolbar() -> some View {
         toolbar {
+            LoopGaugesToolbarItem()
+        }
+    }
+}
+
+/// The gauges as a bar item, without the glass capsule iOS 26 draws behind bar items.
+struct LoopGaugesToolbarItem: ToolbarContent {
+    var body: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .topBarTrailing) { LoopStrapGauges() }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
             ToolbarItem(placement: .topBarTrailing) { LoopStrapGauges() }
         }
     }

@@ -77,7 +77,7 @@ struct LoopRecoveryView: View {
                 }
                 .animation(.easeOut(duration: 0.2), value: titleScrolledAway)
             }
-            ToolbarItem(placement: .topBarTrailing) { LoopStrapGauges() }
+            LoopGaugesToolbarItem()
         }
         .toolbarColorScheme(.dark, for: .navigationBar)
         .modifier(LoopSoftTopEdge())

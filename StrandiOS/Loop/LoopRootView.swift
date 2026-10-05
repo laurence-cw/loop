@@ -5,6 +5,17 @@ enum LoopPrefs {
     static let firstNameKey = "loop.firstName"
     /// Set when setup's "Pair later" was chosen, cleared once a strap bonds.
     static let pairLaterKey = "loop.pairLater"
+    /// Set once Loop has applied its own defaults over Noop's, so a later choice in Settings stands.
+    static let defaultsAppliedKey = "loop.defaultsApplied.v1"
+
+    /// Loop's defaults where they differ from Noop's, applied once per install. Noop shows the live heart
+    /// rate on the Lock Screen and in the Dynamic Island whenever a strap is connected, re-drawn every few
+    /// seconds all day; Loop starts with it off and offers it in Settings.
+    static func applyLoopDefaultsOnce(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: defaultsAppliedKey) else { return }
+        defaults.set(false, forKey: UnitPrefs.liveActivityKey)
+        defaults.set(true, forKey: defaultsAppliedKey)
+    }
 }
 
 /// Loop's root. Replaces Noop's tab shell on iPhone. First run shows Loop's four-screen setup;
@@ -29,6 +40,7 @@ struct LoopRootView: View {
         // The launch duties of Noop's own root (RootTabView), which Loop replaces: read what's stored,
         // then Noop's on-launch backup catch-up (detached, utility priority, gated on its own toggle).
         .task {
+            LoopPrefs.applyLoopDefaultsOnce()
             await repo.refresh()
             let backupRepo = repo
             Task.detached(priority: .utility) {

@@ -8,8 +8,8 @@ struct LoopSleepView: View {
 
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var repo: Repository
-    @State private var sleep = LoopSleep.empty
-    @State private var loaded = false
+    @State private var sleep = LoopShown.last(LoopSleep.self) ?? .empty
+    @State private var loaded = LoopShown.last(LoopSleep.self) != nil
     @State private var titleScrolledAway = false
 
 
@@ -82,7 +82,8 @@ struct LoopSleepView: View {
                 sleep.week[1] = .init(day: sleep.week[1].day, bed: nil, wake: nil)
             }
             #endif
-            withAnimation(.easeOut(duration: 0.3)) { loaded = true }
+            LoopShown.keep(sleep)
+            withAnimation(.easeOut(duration: 0.15)) { loaded = true }
         }
     }
 
@@ -128,7 +129,9 @@ struct LoopSleepView: View {
     // MARK: Words
 
     private var headline: String {
-        guard let asleep = today.sleepMin else { return "No sleep recorded last night. Was the strap off?" }
+        guard let asleep = today.sleepMin else {
+            return "Last night isn't in yet. It shows once your strap has synced and the night is worked out."
+        }
         // The ring already shows the hours, so the sentence carries only the meaning.
         if asleep >= today.sleepNeedMin { return "Enough sleep. That's why today feels easy." }
         if asleep >= today.sleepNeedMin - 45 { return "Close to what you need." }

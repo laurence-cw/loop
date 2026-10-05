@@ -8,9 +8,9 @@ struct LoopRecoveryView: View {
 
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var repo: Repository
-    @State private var recovery = LoopRecovery.empty
-    @State private var insights = LoopRecoveryInsights.empty
-    @State private var loaded = false
+    @State private var recovery = LoopShown.last(LoopRecovery.self) ?? .empty
+    @State private var insights = LoopShown.last(LoopRecoveryInsights.self) ?? .empty
+    @State private var loaded = LoopShown.last(LoopRecoveryInsights.self) != nil
     @State private var titleScrolledAway = false
 
 
@@ -100,7 +100,9 @@ struct LoopRecoveryView: View {
             #if DEBUG
             if CommandLine.arguments.contains("--loop-preview-insights") { insights = .preview }
             #endif
-            withAnimation(.easeOut(duration: 0.3)) { loaded = true }
+            LoopShown.keep(recovery)
+            LoopShown.keep(insights)
+            withAnimation(.easeOut(duration: 0.15)) { loaded = true }
         }
     }
 
@@ -293,7 +295,7 @@ struct LoopRangeBar: View {
         }
         .accessibilityHidden(true)
         // The dot drops in and slides to tonight once the track has drawn, the first time it's seen.
-        .loopOnSeen(threshold: 0.5) { if shown == nil { settle() } }
+        .loopOnSeen(threshold: 0.05) { if shown == nil { settle() } }
         .onChange(of: value) { _, _ in settle() }
     }
 }

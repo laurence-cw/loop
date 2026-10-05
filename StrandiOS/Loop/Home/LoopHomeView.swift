@@ -12,6 +12,7 @@ struct LoopHomeView: View {
     @EnvironmentObject private var behavior: BehaviorStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @State private var warmed = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @AppStorage(LoopPrefs.firstNameKey) private var firstName = ""
@@ -103,6 +104,12 @@ struct LoopHomeView: View {
             if let preview = LoopPreviewState.requested { today = preview.apply(to: today) }
             if CommandLine.arguments.contains("--loop-preview-days") { past = LoopPreviewState.pastDays(newPages) }
             #endif
+            if !warmed {
+                // Once a launch: fill in the section screens behind Home so the first tap opens a full screen.
+                warmed = true
+                let (r, p, t) = (repo, profile, today)
+                Task { await LoopShown.warm(repo: r, profile: p, today: t) }
+            }
             if pages != newPages {
                 // A new day has started (or first load): land on today.
                 pages = newPages
@@ -287,7 +294,7 @@ struct LoopHomeView: View {
             .accessibilityLabel(ringAccessibilityLabel(t))
             .accessibilityHint(page.isToday ? "Opens Recovery" : "")
 
-            arcFeet(t)
+            arcFeet(t, isToday: page.isToday)
                 .frame(maxWidth: 290)
                 .padding(.top, LoopSpace.s)
 
@@ -306,9 +313,10 @@ struct LoopHomeView: View {
     /// activity under the right, always on one line so the two read as a pair. Each shrinks a little
     /// before it would wrap; only the accessibility text sizes stack them.
     @ViewBuilder
-    private func arcFeet(_ t: LoopToday) -> some View {
+    private func arcFeet(_ t: LoopToday, isToday: Bool) -> some View {
         let sleep = footValue(symbol: "moon.fill", colour: LoopColor.signal, value: t.sleepMin,
-                              format: { LoopFormat.duration($0 * 60) })
+                              format: { LoopFormat.duration($0 * 60) },
+                              missing: LoopSleepNeed.missingWord(isToday: isToday, needMin: t.sleepNeedMin))
         let effort = footValue(symbol: "figure.walk", colour: LoopColor.pulse, value: t.effort,
                                format: { "\(Int($0.rounded()))" }, unit: "/100")
         Group {
@@ -330,7 +338,7 @@ struct LoopHomeView: View {
 
     /// One arc's value, counting up as it appears.
     private func footValue(symbol: String, colour: Color, value: Double?, format: @escaping (Double) -> String,
-                           unit: String? = nil) -> some View {
+                           unit: String? = nil, missing: String = "No data") -> some View {
         HStack(alignment: .firstTextBaseline, spacing: LoopSpace.xs) {
             Image(systemName: symbol)
                 .font(.body)
@@ -347,7 +355,7 @@ struct LoopHomeView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             } else {
-                Text("No data")
+                Text(missing)
                     .font(LoopFont.rowValue)
                     .foregroundStyle(LoopColor.muted)
                     .lineLimit(1)
@@ -373,7 +381,8 @@ struct LoopHomeView: View {
             Button { openSleep = true } label: {
                 LoopSectionRow(symbol: "moon.fill", title: "Sleep", colour: LoopColor.signal,
                                word: t.sleepScore.map { ScoreWord.word(for: $0) },
-                               value: t.sleepMin.map { LoopFormat.duration($0 * 60) }, opens: opens, wordOnly: true)
+                               value: t.sleepMin.map { LoopFormat.duration($0 * 60) }, opens: opens, wordOnly: true,
+                               missing: LoopSleepNeed.missingWord(isToday: opens, needMin: t.sleepNeedMin))
             }
             .buttonStyle(LoopPressStyle())
             .disabled(!opens)
@@ -493,6 +502,8 @@ struct LoopSectionRow: View {
     /// Just the word ("Charged"), no number: the ring above and the section itself carry the numbers.
     /// Falls back to the number when there's no word yet (e.g. hours slept before Noop scores the night).
     var wordOnly: Bool = false
+    /// Stands in for the value when there is none.
+    var missing: String = "No data"
 
     var body: some View {
         HStack(spacing: LoopSpace.s) {
@@ -529,7 +540,7 @@ struct LoopSectionRow: View {
                     }
                     .font(LoopFont.rowValue)
                 } else if !quiet {
-                    Text("No data")
+                    Text(missing)
                         .font(LoopFont.rowValue)
                         .foregroundStyle(LoopColor.muted)
                 }

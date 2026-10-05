@@ -7,8 +7,8 @@ struct LoopWeekView: View {
     @Binding var today: LoopToday
 
     @EnvironmentObject private var repo: Repository
-    @State private var week = LoopWeek.empty
-    @State private var loaded = false
+    @State private var week = LoopShown.last(LoopWeek.self) ?? .empty
+    @State private var loaded = LoopShown.last(LoopWeek.self) != nil
     @State private var titleScrolledAway = false
 
     var body: some View {
@@ -65,7 +65,8 @@ struct LoopWeekView: View {
         .tint(LoopColor.text)
         .task(id: repo.refreshSeq) {
             week = await LoopWeekReader.read(repo: repo, today: today)
-            withAnimation(.easeOut(duration: 0.3)) { loaded = true }
+            LoopShown.keep(week)
+            withAnimation(.easeOut(duration: 0.15)) { loaded = true }
         }
     }
 

@@ -170,9 +170,9 @@ struct LoopHeartCard: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(rangeLine.map { "Heart rate through today. \($0)" } ?? "Heart rate through today.")
-        .loopOnSeen(threshold: 0.4) {
+        .loopOnSeen(threshold: 0.05) {
             guard drawn == 0 else { return }
-            if reduceMotion { drawn = 1 } else { withAnimation(.easeInOut(duration: 1.4)) { drawn = 1 } }
+            if reduceMotion { drawn = 1 } else { withAnimation(.easeInOut(duration: 0.8)) { drawn = 1 } }
         }
     }
 

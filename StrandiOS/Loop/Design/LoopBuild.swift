@@ -22,12 +22,12 @@ struct LoopBuildIn: ViewModifier {
                          y: !horizontal && !built ? 0.001 : 1,
                          anchor: anchor)
             .opacity(built ? 1 : 0)
-            .loopOnSeen(threshold: 0.4) {
+            .loopOnSeen(threshold: 0.05) {
                 guard !built else { return }
                 if reduceMotion {
                     built = true
                 } else {
-                    withAnimation(LoopMotion.build.delay(Double(index) * stagger)) { built = true }
+                    withAnimation(LoopMotion.build.delay(Double(index) * stagger * 0.5)) { built = true }
                 }
             }
     }
@@ -54,7 +54,7 @@ struct LoopOnSeen: ViewModifier {
 }
 
 extension View {
-    func loopOnSeen(threshold: Double = 0.4, perform action: @escaping () -> Void) -> some View {
+    func loopOnSeen(threshold: Double = 0.05, perform action: @escaping () -> Void) -> some View {
         modifier(LoopOnSeen(threshold: threshold, action: action))
     }
 }

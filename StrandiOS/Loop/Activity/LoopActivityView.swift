@@ -7,8 +7,8 @@ struct LoopActivityView: View {
 
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
-    @State private var activity = LoopActivity.empty
-    @State private var loaded = false
+    @State private var activity = LoopShown.last(LoopActivity.self) ?? .empty
+    @State private var loaded = LoopShown.last(LoopActivity.self) != nil
     @State private var titleScrolledAway = false
 
     var body: some View {
@@ -64,7 +64,8 @@ struct LoopActivityView: View {
             #if DEBUG
             if CommandLine.arguments.contains("--loop-preview-activity") { activity = LoopActivity.previewSchoolDay() }
             #endif
-            withAnimation(.easeOut(duration: 0.3)) { loaded = true }
+            LoopShown.keep(activity)
+            withAnimation(.easeOut(duration: 0.15)) { loaded = true }
         }
     }
 

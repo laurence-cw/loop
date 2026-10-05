@@ -15,6 +15,7 @@ struct LoopSettingsView: View {
     @AppStorage(LoopPrefs.firstNameKey) private var firstName = ""
     @AppStorage(PuffinExperiment.defaultsKey) private var probesOn = false
     @State private var bedtimeReminder = WindDownNudge.isEnabled
+    @AppStorage(UnitPrefs.liveActivityKey) private var lockScreenHeart = false
     @State private var schoolWake = WindDownNudge.wakeMinutes
     @State private var weekendWake = LoopWake.weekendMinutes
     @State private var reminderDenied = false
@@ -66,6 +67,7 @@ struct LoopSettingsView: View {
                     Text(strapStatus).font(LoopFont.meta).foregroundStyle(LoopColor.muted)
                 }
                 Toggle("Charge reminders", isOn: $behavior.batteryAlerts)
+                Toggle("Heart rate on Lock Screen", isOn: $lockScreenHeart)
             } header: {
                 LoopListHeader("Strap")
             } footer: {
@@ -159,9 +161,10 @@ struct LoopSettingsView: View {
     }
 
     private var chargeFooter: String {
-        guard behavior.batteryAlerts else { return "Off. Turn on for a nudge when your strap is low." }
+        guard behavior.batteryAlerts else { return "Charge reminders are off. Turn on for a nudge when your strap is low." }
         if notifyStatus == .denied { return "Notifications are off for Loop, so these can't arrive. Turn them on in the phone's Settings." }
-        return "A nudge when your strap is low, and before bed if it won't last the night."
+        let charge = "A nudge when your strap is low, and before bed if it won't last the night."
+        return charge + (lockScreenHeart ? " Heart rate on Lock Screen keeps your live heart rate there while the strap is connected, which uses more battery." : "")
     }
 
     /// The same words as Home's pill. Battery only while connected, when the figure is current.

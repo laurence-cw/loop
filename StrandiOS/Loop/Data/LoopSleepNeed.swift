@@ -32,6 +32,25 @@ enum LoopSleepNeed {
     }
 }
 
+extension LoopSleepNeed {
+    /// What stands in for last night's sleep on today's page while it isn't in yet. "No data" read as if
+    /// tonight's sleep were missing. In the evening the useful fact is tonight's bedtime, so that shows
+    /// ("Bed 9:45pm", or "Bed now" once it has passed); earlier in the day, an honest "Not in yet", since
+    /// last night appears once the strap has synced and the night is worked out. Earlier days keep
+    /// "No data": their night is not coming.
+    @MainActor
+    static func missingWord(isToday: Bool, needMin: Double, now: Date = .now, cal: Calendar = .current) -> String {
+        guard isToday else { return "No data" }
+        let hour = cal.component(.hour, from: now)
+        if hour >= 18 || hour < 2,
+           let plan = LoopTonightPlan.make(now: now, needMin: needMin, cal: cal,
+                                           wakeMinutes: WindDownNudge.wakeMinutes(forWeekday:)) {
+            return plan.late ? "Bed now" : "Bed \(LoopFormat.clock(plan.asleepBy))"
+        }
+        return "Not in yet"
+    }
+}
+
 /// Tonight's bedtime: the next wake-up set in Loop's Settings (school days and weekends), minus the
 /// sleep need. Worked out from the clock each time it is shown, so it is never stale.
 struct LoopTonightPlan: Equatable {

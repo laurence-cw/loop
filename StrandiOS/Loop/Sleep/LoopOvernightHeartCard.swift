@@ -68,9 +68,9 @@ struct LoopOvernightHeartCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(LoopSpace.cardPadding)
         .background(LoopCardBackground(glow: LoopColor.signal))
-        .loopOnSeen(threshold: 0.4) {
+        .loopOnSeen(threshold: 0.05) {
             guard drawn == 0 else { return }
-            if reduceMotion { drawn = 1 } else { withAnimation(.easeInOut(duration: 1.4)) { drawn = 1 } }
+            if reduceMotion { drawn = 1 } else { withAnimation(.easeInOut(duration: 0.8)) { drawn = 1 } }
         }
     }
 

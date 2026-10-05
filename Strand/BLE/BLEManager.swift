@@ -1120,6 +1120,8 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Supersedes a previous run's pending verdict timer when the user taps again.
     private var ecgProbeRunToken = 0
     private var clockRequested = false
+    /// When `restoreStrapClock` last acted, so the BOOT + RTC_LOST pair a reboot emits sets the clock once.
+    private var lastStrapClockRestoreAt: Date?
     /// #700: retry count for GET_CLOCK when no correlation establishes before backfill. Capped at 3.
     private var clockRetries = 0
     private var intentionalDisconnect = false
@@ -1393,6 +1395,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
         router.onStrapSerial = { [weak self] serial in self?.noteHarvardSerial(serial) }   // #1193
+        router.onStrapClockLost = { [weak self] event in self?.restoreStrapClock(after: event) }
         // #78 hole-4: a paused-for-bond-loop strap gets one bounded salvage attempt per app-foreground.
         installForegroundSalvageProbe()
     }
@@ -1620,6 +1623,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
         router.onStrapSerial = { [weak self] serial in self?.noteHarvardSerial(serial) }   // #1193
+        router.onStrapClockLost = { [weak self] event in self?.restoreStrapClock(after: event) }
         // #78 hole-4: a paused-for-bond-loop strap gets one bounded salvage attempt per app-foreground.
         installForegroundSalvageProbe()
     }
@@ -4765,6 +4769,20 @@ public final class BLEManager: NSObject, ObservableObject {
         clearRebootState()   // clears the "Reconnecting…" pill → back to "Active · Live"
     }
 
+    /// How long the keep-alive tolerates total silence before bouncing the link.
+    ///
+    /// 120 s is only right for a WHOOP 4.0 whose realtime stream is ARMED: then the strap sends every
+    /// second, and two minutes of nothing really is a stalled stream. Unarmed (no Live screen, Continuous
+    /// HRV capture off, which is the default), a healthy 4.0 is quiet between offloads apart from its
+    /// ~8-min BATTERY_LEVEL event, so the tight fuse bounced healthy links: one field 4.0 logged 100 of its
+    /// 112 disconnects in a day as "No data for >120s", each reconnect re-running the offload (327 in the
+    /// day) and spending strap battery. Unarmed it gets the same 600 s the 5/MG family already has (#1414),
+    /// which still catches a link that has truly gone dead. Twin of the Kotlin `livenessBounceFuseMs`.
+    nonisolated static func livenessBounceFuseSeconds(family: DeviceFamily, realtimeArmed: Bool) -> TimeInterval {
+        if family == .whoop5 { return 600 }
+        return realtimeArmed ? 120 : 600
+    }
+
     private func startKeepAlive() {
         keepAliveTimer?.cancel()
         let s = BLEManager.keepAliveIntervalSeconds
@@ -4802,8 +4820,8 @@ public final class BLEManager: NSObject, ObservableObject {
         // wide fuse on `historyEmpty`, so a 5/MG that DID serve history still thrashed on the 120s fuse
         // (#1414). Widen to the whole 5/MG family; WHOOP 4 (real "not recording" path) keeps the tight 120s.
         // (`historyEmpty` still gates the battery-backfill interval below — a separate concern, left as-is.)
-        let bounceFuse: TimeInterval =
-            selectedModel.deviceFamily == .whoop5 ? 600 : 120
+        let bounceFuse = BLEManager.livenessBounceFuseSeconds(family: selectedModel.deviceFamily,
+                                                              realtimeArmed: realtimeArmed)
         if Date().timeIntervalSince(lastDataAt) > bounceFuse {
             log("No data for >\(Int(bounceFuse))s — bouncing link to resume streaming")
             if let p = peripheral { central.cancelPeripheralConnection(p) }
@@ -7219,6 +7237,37 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
     /// double-latching is harmless. WHOOP 5/MG keeps its single hardware-validated 8-byte send (its
     /// connect path calls setClockPayload() directly; the 9-byte form is unverified on that family), so
     /// the legacy form is gated to WHOOP 4. (#120)
+    /// Whether a strap's BOOT / RTC_LOST event should re-set its clock now: only over a live, bonded link
+    /// (an unbonded one carries no commands), and not again within 30 s, since a reboot reports both events
+    /// back to back and the second set would only repeat the first.
+    nonisolated static func shouldRestoreStrapClock(connected: Bool, bonded: Bool,
+                                                    secondsSinceLastRestore: Double?) -> Bool {
+        guard connected, bonded else { return false }
+        guard let since = secondsSinceLastRestore else { return true }
+        return since >= 30
+    }
+
+    /// The strap rebooted or lost its RTC: set the clock now, and ask for it back so the correlation
+    /// re-establishes against the corrected clock. Until now the clock was only set during the connect
+    /// handshake, so a strap that rebooted on a flat battery while the link stayed up (or came back on a
+    /// link whose handshake had already run) went on without one. A field WHOOP 4.0 banked no usable
+    /// history for ~66 h after such a reboot on 26 Sep, and ~9.5 h after another on 20 Sep, until a later
+    /// connect finally set it. The same commands the handshake sends, so nothing new reaches the strap.
+    private func restoreStrapClock(after event: String) {
+        let since = lastStrapClockRestoreAt.map { Date().timeIntervalSince($0) }
+        guard BLEManager.shouldRestoreStrapClock(connected: state.connected, bonded: didBond,
+                                                 secondsSinceLastRestore: since) else { return }
+        lastStrapClockRestoreAt = Date()
+        log("Strap reported \(event) — setting its clock now rather than at the next connect")
+        sendSetClockBothForms()
+        // The old correlation described the clock the strap just lost. Re-ask, both payload forms, exactly
+        // as the handshake does (#120), so realtime decode and drift checks use the corrected one.
+        clockRef = nil
+        clockRequested = true
+        send(.getClock, payload: [])
+        send(.getClock, payload: [0x00])
+    }
+
     func sendSetClockBothForms() {
         let now = UInt32(Date().timeIntervalSince1970)
         send(.setClock, payload: BLEManager.setClockPayload(now: now))

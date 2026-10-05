@@ -16,6 +16,10 @@ public final class FrameRouter {
     var onStrapSerial: ((String) -> Void)?
 
     var onSyncTrigger: (() -> Void)?
+    /// The strap reported it rebooted or lost its real-time clock (BOOT / RTC_LOST), with the event name.
+    /// BLEManager wires this to re-set the clock at once: a WHOOP 4.0 that rebooted on a flat battery
+    /// banks no usable history until it is given the time again. nil in pure/unit contexts.
+    var onStrapClockLost: ((String) -> Void)?
     /// #1706: which strap this connection is talking to, so an alarm readback can be attributed to a
     /// device. Set per connection by BLEManager immediately AFTER `family`, whose didSet clears this —
     /// a path that sets the family and forgets the id then attributes nothing rather than carrying the
@@ -460,6 +464,12 @@ public final class FrameRouter {
                 // the Backfiller). Event strings are "NAME(rawValue)".
                 if ev.hasPrefix("DOUBLE_TAP") {
                     dispatchDoubleTapOnce(eventTimestamp: parsed.parsed["event_timestamp"]?.intValue)
+                }
+                // A reboot or lost RTC: hand it on so the clock is set now rather than at the next connect.
+                // Live only, like the handlers around it; the event's own timestamp is not consulted,
+                // because after a clock loss it is exactly the thing that cannot be trusted.
+                if ev.hasPrefix("RTC_LOST") || ev.hasPrefix("BOOT") {
+                    onStrapClockLost?(ev)
                 }
                 // Strap-pushed event = "I may have new data" → kick a (rate-limited) sync.
                 onSyncTrigger?()

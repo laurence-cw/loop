@@ -1472,6 +1472,25 @@ class WhoopBleClient(
         fun shouldApplyChargingFromBatteryEvent(replayedOffload: Boolean): Boolean = !replayedOffload
 
         /**
+         * How long the keep-alive tolerates total silence before bouncing the link. 120 s only for a WHOOP
+         * 4.0 whose realtime stream is ARMED (then silence really is a stall); unarmed, a healthy 4.0 is
+         * quiet between offloads apart from its ~8-min battery event, so it gets the 5/MG's 600 s (#1414)
+         * instead of being bounced every few minutes. Twin of the Swift `livenessBounceFuseSeconds`.
+         */
+        fun livenessBounceFuseMs(isWhoop5: Boolean, realtimeArmed: Boolean): Long =
+            if (isWhoop5 || !realtimeArmed) KEEPALIVE_STALL_5MG_EMPTY_MS else KEEPALIVE_STALL_MS
+
+        /**
+         * Whether a strap's BOOT / RTC_LOST event should re-set its clock now: only over a live, bonded link,
+         * and not again within 30 s, since a reboot reports both events back to back. Twin of the Swift
+         * `BLEManager.shouldRestoreStrapClock`.
+         */
+        fun shouldRestoreStrapClock(connected: Boolean, bonded: Boolean, secondsSinceLastRestore: Double?): Boolean {
+            if (!connected || !bonded) return false
+            return secondsSinceLastRestore == null || secondsSinceLastRestore >= 30.0
+        }
+
+        /**
          * PR #577: is this EVENT string a PHYSICAL GESTURE (double-tap / wrist on/off)? Gestures take the
          * freshness-gated gesture branch; everything else (BLE_BONDED, BATTERY_LEVEL, and crucially
          * STRAP_DRIVEN_ALARM_EXECUTED=57) takes the non-gesture branch. Pure so the routing can be tested
@@ -8917,6 +8936,12 @@ class WhoopBleClient(
                         log("[event] $ev${if (replayedOffload) " (replayed offload)" else ""}" +
                             (payHex?.let { " payload=$it" } ?: ""))
                     }
+                    // A reboot or lost RTC on the LIVE link: set the clock now rather than at the next
+                    // connect. Never on a replayed offload event, which describes a reboot long past.
+                    // Twin of `BLEManager.restoreStrapClock`.
+                    if (!replayedOffload && (ev.startsWith("RTC_LOST") || ev.startsWith("BOOT"))) {
+                        restoreStrapClock(ev)
+                    }
                     // Event strings are "NAME(rawValue)", e.g. "WRIST_ON(9)" (see Schema.enumName).
                     // Pure [isGestureEvent] so the gesture-vs-non-gesture routing is unit-testable (PR #577).
                     val isGesture = isGestureEvent(ev)
@@ -9264,7 +9289,7 @@ class WhoopBleClient(
      * answering battery polls keeps this fuse from ever tripping while the HR stream is dead.
      */
     private fun liveLinkStallFuseMs(): Long =
-        if (connectedFamily == DeviceFamily.WHOOP5) KEEPALIVE_STALL_5MG_EMPTY_MS else KEEPALIVE_STALL_MS
+        livenessBounceFuseMs(connectedFamily == DeviceFamily.WHOOP5, realtimeArmed)
 
     /** (Re)start the 30s keep-alive. Called from the connect handshake; cancelled in [reset]. */
     private fun startKeepAlive() {
@@ -9979,6 +10004,24 @@ class WhoopBleClient(
             ((now shr 24) and 0xFF).toByte(),
             0, 0, 0, 0, 0,
         )
+    }
+
+    /** When [restoreStrapClock] last acted, so a reboot's BOOT + RTC_LOST pair sets the clock once. */
+    private var lastStrapClockRestoreAtMs: Long? = null
+
+    /**
+     * The strap rebooted or lost its RTC: set the clock now. Until this, the clock was set only in the
+     * connect handshake, so a strap that rebooted on a flat battery while the link stayed up went on without
+     * one and banked no usable history (a field WHOOP 4.0 lost ~66 h this way). The same commands the
+     * handshake sends, so nothing new reaches the strap. Twin of `BLEManager.restoreStrapClock`.
+     */
+    private fun restoreStrapClock(event: String) {
+        val since = lastStrapClockRestoreAtMs?.let { (System.currentTimeMillis() - it) / 1000.0 }
+        val st = _state.value
+        if (!shouldRestoreStrapClock(st.connected, st.bonded, since)) return
+        lastStrapClockRestoreAtMs = System.currentTimeMillis()
+        log("Strap reported $event — setting its clock now rather than at the next connect")
+        sendSetClockBothForms()
     }
 
     /**

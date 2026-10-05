@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// Loop's Home. Above the fold: the status pill, the day, the loop ring and one sentence. Nothing else.
 /// Swipe the ring sideways to look back over the last two weeks. Below it: one quiet row per section.
@@ -8,7 +9,9 @@ struct LoopHomeView: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var behavior: BehaviorStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @AppStorage(LoopPrefs.firstNameKey) private var firstName = ""
@@ -26,6 +29,8 @@ struct LoopHomeView: View {
     @State private var openSettings = false
     @State private var openBreathe = false
     @State private var openWeek = false
+    /// Notification permission, re-read whenever Home comes back to the front (it can change in Settings).
+    @State private var notifyStatus: UNAuthorizationStatus?
     private static let rowsAnchor = "loop.home.rows"
 
     struct Page: Equatable {
@@ -36,6 +41,14 @@ struct LoopHomeView: View {
 
     private var status: LoopStatus {
         LoopStatus.resolve(live: live, hasStrap: !(model.deviceRegistry?.devices.isEmpty ?? true))
+    }
+
+    /// The strap's charge for the evening card. DEBUG `--loop-preview-low-battery` forces 22%.
+    private var chargePct: Double? {
+        #if DEBUG
+        if CommandLine.arguments.contains("--loop-preview-low-battery") { return 22 }
+        #endif
+        return live.batteryPct
     }
 
     private var todayKey: String? { pages.last?.key }
@@ -114,6 +127,9 @@ struct LoopHomeView: View {
         // Pull down: ask for a sync through Noop's rate-limited foreground trigger (not the forced
         // manual sync, which pauses a 4.0's live heart rate), or look for the strap when it isn't
         // connected; then re-read what's stored, the way Noop's own Today refresh does.
+        .task(id: scenePhase) {
+            if scenePhase == .active { notifyStatus = await LoopCharge.authorizationStatus() }
+        }
         .refreshable {
             if live.connected && live.bonded {
                 model.ble.requestSync(.foreground)
@@ -195,6 +211,28 @@ struct LoopHomeView: View {
                 LoopStatusPill(status: status) { showFindStrap = true }
                     .padding(.top, LoopSpace.m)
                     .transition(.opacity)
+            }
+
+            // Charge: the evening card when the strap is low, and, once, the ask for the notification
+            // permission Noop's battery alerts need (see LoopCharge).
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                if LoopCharge.showsEveningCard(now: context.date, pct: chargePct, charging: live.charging,
+                                               readingIsWhoop: live.activeIsWhoop) {
+                    LoopChargeCard(pct: chargePct ?? 0)
+                        .padding(.horizontal, LoopSpace.edge)
+                        .padding(.top, LoopSpace.m)
+                }
+            }
+            if notifyStatus == .notDetermined && behavior.batteryAlerts {
+                LoopNotifyAskCard {
+                    Task {
+                        await LoopCharge.requestPermission()
+                        notifyStatus = await LoopCharge.authorizationStatus()
+                    }
+                }
+                .padding(.horizontal, LoopSpace.edge)
+                .padding(.top, LoopSpace.m)
+                .transition(.opacity)
             }
         }
     }
@@ -719,5 +757,69 @@ struct LoopPressStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.7 : 1)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+/// "Charge your strap before bed": shown on Home in the evening when the strap is low (LoopCharge).
+struct LoopChargeCard: View {
+    let pct: Double
+
+    var body: some View {
+        HStack(spacing: LoopSpace.s) {
+            Image(systemName: "battery.25percent")
+                .font(.title3)
+                .foregroundStyle(LoopColor.text)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Charge your strap before bed")
+                    .font(LoopFont.rowTitle)
+                    .foregroundStyle(LoopColor.text)
+                Text("\(Int(pct.rounded()))% left. Flat overnight means no sleep score tomorrow.")
+                    .font(LoopFont.explainer)
+                    .foregroundStyle(LoopColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(LoopSpace.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LoopCardBackground(glow: LoopColor.muted))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The one-time ask for notifications, with what they're for. Disappears once answered either way.
+struct LoopNotifyAskCard: View {
+    let onTurnOn: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LoopSpace.s) {
+            HStack(spacing: LoopSpace.s) {
+                Image(systemName: "bell.badge")
+                    .font(.title3)
+                    .foregroundStyle(LoopColor.text)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Get a nudge to charge your strap")
+                        .font(LoopFont.rowTitle)
+                        .foregroundStyle(LoopColor.text)
+                    Text("When it's low, and before bed if it won't last the night.")
+                        .font(LoopFont.explainer)
+                        .foregroundStyle(LoopColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Button(action: onTurnOn) {
+                Text("Turn on")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(LoopColor.night)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(Capsule().fill(LoopColor.text))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(LoopSpace.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LoopCardBackground(glow: LoopColor.muted))
     }
 }

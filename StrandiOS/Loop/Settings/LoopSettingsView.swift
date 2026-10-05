@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import WhoopProtocol
 
 /// Loop's Settings: only what a boy might change once a month. Fits one screen.
@@ -17,6 +18,8 @@ struct LoopSettingsView: View {
     @State private var schoolWake = WindDownNudge.wakeMinutes
     @State private var weekendWake = LoopWake.weekendMinutes
     @State private var reminderDenied = false
+    @State private var chargeDenied = false
+    @State private var notifyStatus: UNAuthorizationStatus?
 
     private var isWhoop5: Bool {
         #if DEBUG
@@ -62,7 +65,12 @@ struct LoopSettingsView: View {
                     Spacer()
                     Text(strapStatus).font(LoopFont.meta).foregroundStyle(LoopColor.muted)
                 }
-            } header: { LoopListHeader("Strap") }
+                Toggle("Charge reminders", isOn: $behavior.batteryAlerts)
+            } header: {
+                LoopListHeader("Strap")
+            } footer: {
+                Text(chargeFooter)
+            }
             .listRowBackground(LoopColor.surface)
 
             Section {
@@ -78,6 +86,25 @@ struct LoopSettingsView: View {
             WindDownNudge.setEnabled(on) { outcome in
                 if outcome == .denied { bedtimeReminder = false; reminderDenied = true }
             }
+        }
+        // Noop's own battery alerts (BatteryNotifier) read this same setting; turning it on asks for the
+        // permission they need, since they post nothing without it.
+        .onChange(of: behavior.batteryAlerts) { _, on in
+            guard on else { return }
+            Task {
+                await LoopCharge.requestPermission()
+                notifyStatus = await LoopCharge.authorizationStatus()
+                if notifyStatus == .denied { chargeDenied = true }
+            }
+        }
+        .task { notifyStatus = await LoopCharge.authorizationStatus() }
+        .alert("Notifications are off for Loop", isPresented: $chargeDenied) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("Turn them on in the phone's Settings to get charge reminders.")
         }
         .alert("Notifications are off for Loop", isPresented: $reminderDenied) {
             Button("Open Settings") {
@@ -129,6 +156,12 @@ struct LoopSettingsView: View {
             lines.append("Bedtime reminder \(LoopWake.dayName(next, now: now, tonight: true)) at \(LoopWake.time(next)).")
         }
         return lines.isEmpty ? "Set your wake times, then turn on the buzz." : lines.joined(separator: " ")
+    }
+
+    private var chargeFooter: String {
+        guard behavior.batteryAlerts else { return "Off. Turn on for a nudge when your strap is low." }
+        if notifyStatus == .denied { return "Notifications are off for Loop, so these can't arrive. Turn them on in the phone's Settings." }
+        return "A nudge when your strap is low, and before bed if it won't last the night."
     }
 
     /// The same words as Home's pill. Battery only while connected, when the figure is current.

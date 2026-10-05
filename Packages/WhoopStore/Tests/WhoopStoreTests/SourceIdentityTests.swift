@@ -10,9 +10,10 @@ import XCTest
 /// written by both paths under one id, contamination there cannot be separated after the fact.
 final class SourceIdentityTests: XCTestCase {
 
-    private func row(_ id: String, _ brand: String, _ peripheralId: String?) -> PairedDevice {
+    private func row(_ id: String, _ brand: String, _ peripheralId: String?,
+                     _ status: DeviceStatus = .paired) -> PairedDevice {
         PairedDevice(id: id, brand: brand, model: "m", peripheralId: peripheralId,
-                     sourceKind: .liveBLE, capabilities: [.hr], status: .paired,
+                     sourceKind: .liveBLE, capabilities: [.hr], status: status,
                      addedAt: 0, lastSeenAt: 0)
     }
 
@@ -74,5 +75,33 @@ final class SourceIdentityTests: XCTestCase {
         let legacy = row("my-whoop", "", "AA:BB:CC:DD:EE:03")
         XCTAssertEqual(SourceIdentity.resolve(address: "AA:BB:CC:DD:EE:03",
                                               rows: [legacy], currentId: "oura-abc"), "my-whoop")
+    }
+
+    // MARK: - Archived rows sharing the address (re-added strap)
+
+    /// The field bug: the strap was re-added, leaving the seeded row ARCHIVED with the same peripheral id
+    /// and listed first. The link belongs to the active row, never the archived one.
+    func testArchivedRowSharingTheAddressNeverWins() {
+        let old = row("my-whoop", "WHOOP", "94DB7BE0-70F4-9C60-779B-224029185E6A", .archived)
+        let now = row("whoop-5AG0743027", "WHOOP", "94DB7BE0-70F4-9C60-779B-224029185E6A", .active)
+        XCTAssertEqual(SourceIdentity.resolve(address: "94DB7BE0-70F4-9C60-779B-224029185E6A",
+                                              rows: [old, now], currentId: "my-whoop"), "whoop-5AG0743027")
+        // ...and once the id is already the active row's, nothing moves it back.
+        XCTAssertNil(SourceIdentity.resolve(address: "94DB7BE0-70F4-9C60-779B-224029185E6A",
+                                            rows: [old, now], currentId: "whoop-5AG0743027"))
+    }
+
+    /// Only an archived row carries the address: leave the id alone, exactly as for no match.
+    func testOnlyAnArchivedMatchLeavesTheIdAlone() {
+        let old = row("whoop-old", "WHOOP", "AA:BB:CC:DD:EE:09", .archived)
+        XCTAssertNil(SourceIdentity.resolve(address: "AA:BB:CC:DD:EE:09", rows: [old], currentId: "my-whoop"))
+    }
+
+    /// Two live rows share the address: the active one wins over a merely paired one.
+    func testActiveRowWinsOverAPairedRowSharingTheAddress() {
+        let paired = row("whoop-a", "WHOOP", "AA:BB:CC:DD:EE:0A", .paired)
+        let active = row("whoop-b", "WHOOP", "AA:BB:CC:DD:EE:0A", .active)
+        XCTAssertEqual(SourceIdentity.resolve(address: "AA:BB:CC:DD:EE:0A",
+                                              rows: [paired, active], currentId: "x"), "whoop-b")
     }
 }

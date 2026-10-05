@@ -32,7 +32,13 @@ object SourceIdentity {
      */
     fun resolve(address: String?, rows: List<PairedDeviceRow>, currentId: String): String? {
         if (address.isNullOrBlank()) return null
-        val row = rows.firstOrNull { it.peripheralId?.equals(address, ignoreCase = true) == true }
+        val matches = rows.filter { it.peripheralId?.equals(address, ignoreCase = true) == true }
+        // An ARCHIVED row is history, never a live link's owner: re-adding or re-pairing a strap leaves the
+        // old row archived with the SAME address, and taking the first match filed the link's samples under
+        // it. Among live rows the ACTIVE one wins; with only an archived match, leave the id alone exactly as
+        // for no match. Twin of the Swift `SourceIdentity.resolve`.
+        val row = matches.firstOrNull { it.status == "active" }
+            ?: matches.firstOrNull { it.status != "archived" }
             ?: return null
         if (!isWhoop(row) || row.id == currentId) return null
         return row.id

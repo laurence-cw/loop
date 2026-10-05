@@ -16,9 +16,9 @@ import org.junit.Test
  */
 class SourceIdentityTest {
 
-    private fun row(id: String, brand: String, peripheralId: String?) = PairedDeviceRow(
+    private fun row(id: String, brand: String, peripheralId: String?, status: String = "paired") = PairedDeviceRow(
         id = id, brand = brand, model = "m", nickname = null, peripheralId = peripheralId,
-        sourceKind = "liveBLE", capabilities = "hr", status = "paired", addedAt = 0L, lastSeenAt = 0L,
+        sourceKind = "liveBLE", capabilities = "hr", status = status, addedAt = 0L, lastSeenAt = 0L,
     )
 
     private val ring = row("oura-abc", "Oura", "AA:BB:CC:DD:EE:01")
@@ -89,5 +89,33 @@ class SourceIdentityTest {
         val legacy = row(WhoopBleClient.DEFAULT_DEVICE_ID, "", "AA:BB:CC:DD:EE:03")
         assertEquals(WhoopBleClient.DEFAULT_DEVICE_ID,
             SourceIdentity.resolve("AA:BB:CC:DD:EE:03", listOf(legacy), currentId = "oura-abc"))
+    }
+
+    // ── Archived rows sharing the address (re-added strap). Twin of the Swift cases. ──
+
+    /** The field bug: a re-added strap leaves the old row ARCHIVED with the same address, listed first. */
+    @Test
+    fun `an archived row sharing the address never wins`() {
+        val old = row("my-whoop", "WHOOP", "94DB7BE0-70F4-9C60-779B-224029185E6A", "archived")
+        val now = row("whoop-5AG0743027", "WHOOP", "94DB7BE0-70F4-9C60-779B-224029185E6A", "active")
+        assertEquals("whoop-5AG0743027",
+            SourceIdentity.resolve("94DB7BE0-70F4-9C60-779B-224029185E6A", listOf(old, now), currentId = "my-whoop"))
+        assertNull(SourceIdentity.resolve("94DB7BE0-70F4-9C60-779B-224029185E6A", listOf(old, now),
+            currentId = "whoop-5AG0743027"))
+    }
+
+    /** Only an archived row carries the address: leave the id alone, exactly as for no match. */
+    @Test
+    fun `only an archived match leaves the id alone`() {
+        val old = row("whoop-old", "WHOOP", "AA:BB:CC:DD:EE:09", "archived")
+        assertNull(SourceIdentity.resolve("AA:BB:CC:DD:EE:09", listOf(old), currentId = "my-whoop"))
+    }
+
+    /** Two live rows share the address: the active one wins over a merely paired one. */
+    @Test
+    fun `the active row wins over a paired row sharing the address`() {
+        val paired = row("whoop-a", "WHOOP", "AA:BB:CC:DD:EE:0A", "paired")
+        val active = row("whoop-b", "WHOOP", "AA:BB:CC:DD:EE:0A", "active")
+        assertEquals("whoop-b", SourceIdentity.resolve("AA:BB:CC:DD:EE:0A", listOf(paired, active), currentId = "x"))
     }
 }

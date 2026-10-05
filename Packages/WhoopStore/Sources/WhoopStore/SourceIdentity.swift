@@ -31,10 +31,18 @@ public enum SourceIdentity {
         guard let address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
-        guard let row = rows.first(where: {
+        let matches = rows.filter {
             guard let pid = $0.peripheralId else { return false }
             return pid.caseInsensitiveCompare(address) == .orderedSame
-        }) else { return nil }
+        }
+        // An ARCHIVED row is history, never a live link's owner. Re-adding or re-pairing a strap leaves the
+        // old row archived with the SAME peripheral id, and taking the first match filed every connection's
+        // samples under it: a field install logged "Attributing this link to my-whoop" 195 times in a night
+        // and its data flipped between the two ids, so a whole night landed under the archived one and was
+        // never staged. Among live rows the ACTIVE one wins; with only an archived match, leave the id alone
+        // exactly as for no match.
+        guard let row = matches.first(where: { $0.status == .active })
+                ?? matches.first(where: { $0.status != .archived }) else { return nil }
         guard isWhoop(row), row.id != currentId else { return nil }
         return row.id
     }

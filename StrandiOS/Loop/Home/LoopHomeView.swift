@@ -727,7 +727,9 @@ enum LoopPreviewState: String {
         case .nodata:
             t.recovery = .noData; t.sleepMin = nil; t.sleepScore = nil; t.effort = nil; t.steps = nil
         }
-        if CommandLine.arguments.contains("--loop-preview-activity") { t.effort = 58; t.steps = 13_277 }
+        if CommandLine.arguments.contains("--loop-preview-activity") {
+            t.effort = 58; t.steps = 13_277; t.sleepMin = 0.78 * max(t.sleepNeedMin, 540)
+        }
         return t
     }
 

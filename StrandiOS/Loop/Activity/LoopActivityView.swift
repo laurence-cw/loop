@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Activity, one tap in from Home. Headline: today's effort and steps. Then effort through the day
-/// with its peaks, heart-rate zones, today's activities, calories burned, and the week.
+/// Activity, one tap in from Home. Headline: today's effort and steps. Then live heart rate and the
+/// day's heart-rate line, effort through the day with its peaks, heart-rate zones, today's activities, calories burned, and the week.
 struct LoopActivityView: View {
     @Binding var today: LoopToday
 
@@ -78,8 +78,11 @@ struct LoopActivityView: View {
                 LoopCaloriesCard(today: activity.kcalToday, week: activity.week).padding(.top, LoopSpace.s)
             }
             #endif
-            LoopDayEffortCard(hours: activity.hours)
+            LoopHeartCard()
                 .padding(.top, LoopSpace.l)
+
+            LoopDayEffortCard(hours: activity.hours)
+                .padding(.top, LoopSpace.s)
 
             LoopZonesCard(minutes: activity.zoneMinutes, floors: activity.zoneFloors, maxHR: activity.maxHR)
                 .padding(.top, LoopSpace.s)

@@ -22,9 +22,9 @@ struct LoopRing: View {
             ZStack {
                 // SwiftUI angles run clockwise from 3 o'clock.
                 // Sleep: the left side, filling upward.
-                arc(from: 180 - halfSpan, to: 180 + halfSpan, fill: sleepFraction, colour: LoopColor.signal)
+                arc(from: 180 - halfSpan, fill: sleepFraction, colour: LoopColor.signal)
                 // Activity: the right side, spending downward.
-                arc(from: 360 - halfSpan, to: 360 + halfSpan, fill: effortFraction, colour: LoopColor.pulse)
+                arc(from: 360 - halfSpan, fill: effortFraction, colour: LoopColor.pulse)
                 LoopOrb(recovery: today.recovery, diameter: d * 0.62)
             }
             .frame(width: d, height: d)
@@ -35,19 +35,76 @@ struct LoopRing: View {
 
     // MARK: Arcs
 
+    /// Home's arcs are heavier than the section rings: they are the screen's two brackets.
+    private let stroke: CGFloat = 16
+
     /// The fill is always drawn and its length animates, so the arc draws in once when real data
     /// first arrives (and eases to any later value) instead of popping in at full length.
-    private func arc(from start: Double, to end: Double, fill: Double?, colour: Color) -> some View {
+    private func arc(from start: Double, fill: Double?, colour: Color) -> some View {
         let f = min(max(fill ?? 0, 0), 1)
+        return LoopArc(span: halfSpan * 2, fill: f, colour: colour, lineWidth: stroke)
+            .rotationEffect(.degrees(start - LoopArc.origin))
+            .animation(reduceMotion ? nil : LoopMotion.fill, value: f)
+    }
+}
+
+/// One of Home's arcs: a faint track in its own colour, and the fill lit from deep at its root to full
+/// strength at its tip, with a soft glow under it and a bright bead where it ends. Drawn from
+/// `origin` and rotated into place by the caller, so the gradient never wraps past 360°.
+struct LoopArc: View, Animatable {
+    static let origin: Double = 90
+
+    let span: Double
+    var fill: Double
+    let colour: Color
+    let lineWidth: CGFloat
+
+    var animatableData: Double {
+        get { fill }
+        set { fill = newValue }
+    }
+
+    var body: some View {
+        let o = Self.origin
+        let end = o + span * fill
+        let style = StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+        // Starts a little before the arc so the round cap at the root sits in the deep colour too.
+        let lit = AngularGradient(colors: [colour.opacity(0.45), colour.opacity(0.8), colour],
+                                  center: .center, startAngle: .degrees(o - 10), endAngle: .degrees(max(end, o + 1)))
         return ZStack {
-            ArcShape(start: start, end: end)
-                .stroke(LoopColor.line, style: StrokeStyle(lineWidth: LoopShape.arcStroke, lineCap: .round))
-            ArcShape(start: start, end: start + (end - start) * f)
-                .stroke(colour, style: StrokeStyle(lineWidth: LoopShape.arcStroke, lineCap: .round))
-                .opacity(f > 0.001 ? 1 : 0)
+            ArcShape(start: o, end: o + span)
+                .stroke(colour.opacity(0.13), style: style)
+            if fill > 0.001 {
+                ArcShape(start: o, end: end)
+                    .stroke(colour, style: style)
+                    .blur(radius: lineWidth * 0.7)
+                    .opacity(0.55)
+                ArcShape(start: o, end: end)
+                    .stroke(lit, style: style)
+                ArcBead(angle: end, size: lineWidth * 0.36)
+                    .fill(Color.white.opacity(0.85))
+                    .shadow(color: .white.opacity(0.6), radius: 3)
+            }
         }
-        .padding(LoopShape.arcStroke / 2)
-        .animation(reduceMotion ? nil : LoopMotion.fill, value: f)
+        .padding(lineWidth / 2)
+    }
+}
+
+/// A small dot on the arc's circle at `angle`: the bright tip of a Home arc.
+struct ArcBead: Shape {
+    var angle: Double
+    let size: CGFloat
+
+    var animatableData: Double {
+        get { angle }
+        set { angle = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let r = min(rect.width, rect.height) / 2
+        let a = angle * .pi / 180
+        let c = CGPoint(x: rect.midX + r * cos(a), y: rect.midY + r * sin(a))
+        return Path(ellipseIn: CGRect(x: c.x - size / 2, y: c.y - size / 2, width: size, height: size))
     }
 }
 

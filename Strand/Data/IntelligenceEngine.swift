@@ -758,8 +758,13 @@ final class IntelligenceEngine: ObservableObject {
     /// Compute on-device scores for each of the last `maxDays` that actually has raw HR data.
     /// Personal baselines (HRV / resting HR) are folded from the imported history, so even the first
     /// live night can be scored against your norm.
+    ///
+    /// `recentOnly` is the short recent-first pass (see `runsRecentFirst`): it scores and persists the newest
+    /// nights like any pass, but leaves the watermark, the owed mark and the banked pass cost alone, because it
+    /// is not the full window those describe.
     func analyzeRecent(maxDays: Int = 21, force: Bool = true, skipIfUnchanged: Bool = false,
                        triggerLabel: String? = nil, preserveUnscoredHistory: Bool = false,
+                       recentOnly: Bool = false,
                        onPersisted: (() -> Void)? = nil) async {
         // #899-A: a concurrent pass already holds the lock. A NON-forced idle tick is safe to drop (the
         // in-flight pass already covers the same window). But a FORCED call is a real update path (a
@@ -849,6 +854,28 @@ final class IntelligenceEngine: ObservableObject {
         diagnosticSink?("re-score: trigger=\(trigger) "
                         + "newData=\(hadNew ? "yes" : "no (nothing changed since last run)")", nil)
 
+        // #1538 follow-up: a full window is all-or-nothing, and on a heavy 5/MG store it can run longer than
+        // any background wake. A field install restarted it from the first night on every relaunch and went
+        // a day without a single completed pass, so last night never appeared. When the last full pass was
+        // cut short, or this one starts in the background, score the newest nights first in a short pass
+        // that persists on its own, then run the full window as before. If the full pass is cut short too,
+        // the recent nights are already in.
+        if Self.runsRecentFirst(maxDays: maxDays, recentOnly: recentOnly,
+                                preserveUnscoredHistory: preserveUnscoredHistory,
+                                owedFromInterruptedPass: RescoreBackgroundScheduler.isRescoreOwed
+                                    && !RescoreBackgroundScheduler.isOwedAfterCompletedPass,
+                                backgrounded: RescoreBackgroundScheduler.isBackgrounded) {
+            diagnosticSink?("re-score: recent-first — scoring the newest \(Self.recentFirstDays) nights before the "
+                            + "\(maxDays)-day window", nil)
+            await analyzeRecent(maxDays: Self.recentFirstDays, force: true, triggerLabel: "recent-first",
+                                recentOnly: true)
+            // The short pass released the lock; another trigger may have taken it while we awaited.
+            guard !computing else {
+                if force { pendingForcedRescore = true }
+                return
+            }
+        }
+
         // #1005: time the whole pass — the trigger line above records WHY; this records how many nights
         // and how long (the CPU cost per run), so a re-score STORM is visible in the strap log.
         // Uptime, not `Date()`: the elapsed figure below is banked as what a pass COSTS, and a wall clock
@@ -877,7 +904,8 @@ final class IntelligenceEngine: ObservableObject {
         // state that skipped the capture and just cleared, which is exactly where #1681 lived. The
         // Kotlin post-offload gate makes the same point in its own words: "captured before the run,
         // written only on success".
-        let owedToken = RescoreBackgroundScheduler.markRescoreOwed(passStarting: true)
+        // A recent-first pass is not the debt: leave the mark to the full pass that owes it.
+        let owedToken = recentOnly ? nil : RescoreBackgroundScheduler.markRescoreOwed(passStarting: true)
         // #899-A re-arm: clear the lock, then if a forced rescore was dropped while this pass held it,
         // run it ONCE. The flag is cleared BEFORE the re-invoke (a single re-arm), so a forced call landing
         // DURING the re-invoke re-arms it again but a quiet one does not , this can never recurse unbounded.
@@ -891,8 +919,9 @@ final class IntelligenceEngine: ObservableObject {
                 // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass
                 // must re-score the same width, not the default 21 days (Kotlin re-passes with the same
                 // maxDays; keep the platforms in lockstep).
+                // A recent-first pass re-arms the FULL window: the trigger it held off wants the whole pass.
                 Task {
-                    await self.analyzeRecent(maxDays: maxDays, force: true,
+                    await self.analyzeRecent(maxDays: recentOnly ? 21 : maxDays, force: true,
                                              preserveUnscoredHistory: preserveUnscoredHistory,
                                              onPersisted: onPersisted)
                 }
@@ -3035,7 +3064,7 @@ final class IntelligenceEngine: ObservableObject {
         // #836/#sleep-sync: record the complete raw-analysis fingerprint this run scored against, so a later
         // NON-forced tick can short-circuit while it's unchanged. Written ONLY at the end of a completed run (never on an
         // early guard-return), so an interrupted/failed run can't advance the watermark past unscored data.
-        if !wmKey.isEmpty { UserDefaults.standard.set(wmKey, forKey: Self.analyzeWatermarkKey) }
+        if !wmKey.isEmpty && !recentOnly { UserDefaults.standard.set(wmKey, forKey: Self.analyzeWatermarkKey) }
         markPostLoopPhase("tail")
         diagnosticSink?(AnalysisPhaseTally.logLine(scope: "postLoop", postLoopPhases), nil)
         // #1538: clear the started-mark and bank how long a COMPLETED pass costs on this install. The
@@ -3043,7 +3072,10 @@ final class IntelligenceEngine: ObservableObject {
         // background wake from one that never could, instead of guessing from a constant — the cost varies
         // by more than an order of magnitude with history size.
         let elapsed = Double(DispatchTime.now().uptimeNanoseconds &- reScoreStart) / 1_000_000_000
-        let settled = RescoreBackgroundScheduler.markRescoreCompleted(seconds: elapsed, owedToken: owedToken)
+        // A recent-first pass neither settles the debt nor banks its cost: it is a fraction of the window,
+        // and banking it would tell the background policy a full pass is cheap.
+        let settled = recentOnly
+            || RescoreBackgroundScheduler.markRescoreCompleted(seconds: elapsed, owedToken: owedToken)
         diagnosticSink?("re-score: done — scored \(scoredNights.count) night(s) in \(Int(elapsed * 1000)) ms (#1005)", nil)
         diagnosticSink?(RescoreBackgroundScheduler.passCostLogLine(
             cpuSeconds: RescoreBackgroundScheduler.processCPUSeconds().flatMap { end in reScoreCPUStart.map { end - $0 } },
@@ -3058,6 +3090,20 @@ final class IntelligenceEngine: ObservableObject {
                             + "was running, so the mark stays and another pass will run (#1681)", nil)
         }
         if !Task.isCancelled && !pendingForcedRescore { onPersisted?() }
+    }
+
+    /// Nights a recent-first pass scores: today, last night and the one before, so a night that lands late
+    /// is still covered.
+    nonisolated static let recentFirstDays = 3
+
+    /// Whether a pass should first run the short recent-first pass. Only for a full window (wider than the
+    /// recent pass, and not a history repair, which has its own resume), never from inside the recent pass,
+    /// and only when it is needed: the last full pass was cut short, or this one starts in the background,
+    /// where a full window may not get the time it needs. A foreground pass on a healthy install is unchanged.
+    nonisolated static func runsRecentFirst(maxDays: Int, recentOnly: Bool, preserveUnscoredHistory: Bool,
+                                            owedFromInterruptedPass: Bool, backgrounded: Bool) -> Bool {
+        guard maxDays > recentFirstDays, !recentOnly, !preserveUnscoredHistory else { return false }
+        return owedFromInterruptedPass || backgrounded
     }
 
     /// UserDefaults key for the #836 idle-tick gate: the complete raw-analysis fingerprint the last completed

@@ -1301,6 +1301,8 @@ final class IntelligenceEngine: ObservableObject {
                 let strictWhoop5RR = (try? await store.isWhoop5RRSource(deviceId: owner,
                     unlabelledAliasOfWhoop5: activeWhoop5RR && owner == Repository.whoopSource)) ?? true
                 let rr = await rrWindow.rows(owner: owner, from: from, to: to, allowReuse: !strictWhoop5RR)
+                // Rest point inside the night (see the comment before `tScore0` below for why).
+                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
                 // `forScoring` drops an Oura ring's respiration rows: those are the ring's OWN per-window
                 // RATE (0x6A, milli-bpm, ~1 row per 5 min), stored as instrumentation, while the stager
                 // reads this stream as a ~1 Hz raw ADC waveform. Refusing by provenance keeps the
@@ -1325,6 +1327,8 @@ final class IntelligenceEngine: ObservableObject {
                 // #93: WHOOP 4.0 raw SpO2 PPG samples for the night; analyzeDay banks the nightly red/IR ADC
                 // means on the DailyMetric. Empty on a 5/MG (no v24 spo2 channels) → the raw means stay nil.
                 let spo2 = (try? await store.spo2Samples(deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
+                // Rest point inside the night (see the comment before `tScore0` below for why).
+                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
                 // #938: the strap family that WROTE this owner's skin-temp rows, so analyzeDay converts the raw
                 // register on the right scale (5/MG banks centidegrees, a WHOOP 4.0 v24 banks a raw ADC). The
                 // registry knows each device's model; unknown/non-WHOOP owners fall back to `.whoop5` (the prior
@@ -1508,6 +1512,15 @@ final class IntelligenceEngine: ObservableObject {
                     providedSleep = []
                 }
 
+                // Rest points INSIDE the night, not only between nights (#1538 follow-up). On a WHOOP 5/MG
+                // one night's unit reads ~1 Hz HR, R-R, gravity, steps and skin temp across its window and
+                // then stages it, which together ran to ~48 s of near-continuous CPU on a real install: past
+                // iOS's 80%-over-60 s background limit before the between-night rest was ever reached. Two
+                // field `cpu_resource_fatal` reports put the kill in exactly this unit, once in the step read
+                // and once in `SleepStagerV2`. `paceIfBackgrounded` rests only once a work quantum has built
+                // up and never in the foreground, so these extra checks cost nothing on a light night or with
+                // the app open; on a heavy background night they split the unit into ~10 s pieces.
+                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
                 let tScore0 = Date()
                 dayPrepSeconds += tScore0.timeIntervalSince(tPrep0)
                 // #1770 follow-up: the Effort ring's funnel. Collected here rather than sent straight

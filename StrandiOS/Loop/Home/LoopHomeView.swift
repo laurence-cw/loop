@@ -316,7 +316,7 @@ struct LoopHomeView: View {
     private func arcFeet(_ t: LoopToday, isToday: Bool) -> some View {
         let sleep = footValue(symbol: "moon.fill", colour: LoopColor.signal, value: t.sleepMin,
                               format: { LoopFormat.duration($0 * 60) },
-                              missing: LoopSleepNeed.missingWord(isToday: isToday, needMin: t.sleepNeedMin))
+                              missing: LoopSleepNeed.missingWord(isToday: isToday))
         let effort = footValue(symbol: "figure.walk", colour: LoopColor.pulse, value: t.effort,
                                format: { "\(Int($0.rounded()))" }, unit: "/100")
         Group {
@@ -381,8 +381,9 @@ struct LoopHomeView: View {
             Button { openSleep = true } label: {
                 LoopSectionRow(symbol: "moon.fill", title: "Sleep", colour: LoopColor.signal,
                                word: t.sleepScore.map { ScoreWord.word(for: $0) },
-                               value: t.sleepMin.map { LoopFormat.duration($0 * 60) }, opens: opens, wordOnly: true,
-                               missing: LoopSleepNeed.missingWord(isToday: opens, needMin: t.sleepNeedMin))
+                               value: t.sleepMin.map { LoopFormat.duration($0 * 60) },
+                               detail: opens ? "Last night" : "The night before", opens: opens, wordOnly: true,
+                               missing: LoopSleepNeed.missingWord(isToday: opens))
             }
             .buttonStyle(LoopPressStyle())
             .disabled(!opens)

@@ -141,6 +141,76 @@ final class RecentFirstRescoreTests: XCTestCase {
                        "recent pass, repair, then one ordinary follow-up")
     }
 
+    /// Recovery is scored against a baseline of earlier nights. A recent pass covers three, too few to seed
+    /// it, and wrote recovery as nil over three good days on a field phone. It must seed from the computed
+    /// nights already stored before its window, the ones the full window would have scored.
+    func testARecentPassKeepsRecoveryBySeedingFromStoredNights() async throws {
+        let defaults = UserDefaults.standard
+        let keys = ["noop.analyzeWatermark", RescoreBackgroundScheduler.owedKey,
+                    RescoreBackgroundScheduler.owedTokenKey, RescoreBackgroundScheduler.lastPassSecondsKey,
+                    DayCycleMode.storageKey, "noop.hrvBaselineEpoch", "noop.recoveryBaselineEpoch",
+                    "analyzeRecent.stepsMotionCache.v1",
+                    PuffinExperiment.experimentalSleepV2Key, PuffinExperiment.motionAwareWakeKey]
+        let saved = keys.map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(DayCycleMode.midnight.rawValue, forKey: DayCycleMode.storageKey)
+        defaults.set(true, forKey: PuffinExperiment.experimentalSleepV2Key)
+        defaults.set(false, forKey: PuffinExperiment.motionAwareWakeKey)
+
+        let store = try await WhoopStore.inMemory()
+        let registry = DeviceRegistryStore(dbQueue: store.registryWriter)
+        try registry.add(PairedDevice(id: canonical, brand: "WHOOP", model: "4.0",
+            sourceKind: .liveBLE, capabilities: [.hr, .hrv], status: .paired, addedAt: 1, lastSeenAt: 1))
+        try registry.add(PairedDevice(id: active, brand: "WHOOP", model: "5.0",
+            sourceKind: .liveBLE, capabilities: [.hr, .hrv], status: .active, addedAt: 2, lastSeenAt: 2))
+        let night = nightWithBeats()
+        _ = try await store.insert(Streams(hr: night.hr, rr: night.rr), deviceId: canonical)
+        // Fourteen computed nights from earlier passes, before the recent window.
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let today = Calendar.current.startOfDay(for: Date())
+        let earlier = (4...17).map { back in
+            DailyMetric(day: f.string(from: today.addingTimeInterval(-Double(back) * 86_400)),
+                totalSleepMin: 480, efficiency: 0.9, deepMin: 90, remMin: 90, lightMin: 300,
+                disturbances: 0, restingHr: 60, avgHrv: 32 + Double(back % 3), recovery: 60,
+                strain: nil, exerciseCount: nil)
+        }
+        _ = try await store.upsertDailyMetrics(earlier, deviceId: canonical + "-noop")
+        let repo = Repository(deviceId: active)
+        repo.setStoreForTesting(store)
+        let engine = IntelligenceEngine(repo: repo, profile: ProfileStore(), deviceId: canonical)
+
+        await engine.analyzeRecent(maxDays: IntelligenceEngine.recentFirstDays, force: true, recentOnly: true)
+        let rows = try await store.dailyMetrics(deviceId: canonical + "-noop", from: night.day, to: night.day)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertNotNil(row.avgHrv, "fixture: the night must have an HRV to score recovery from")
+        XCTAssertNotNil(row.recovery, "a recent pass must score recovery against the stored earlier nights")
+    }
+
+    /// The same night `IntelligenceRRSourceTests` scores: awake from 08:00 the day before yesterday, asleep
+    /// from midnight to 08:00 yesterday, with beat-to-beat intervals throughout.
+    private func nightWithBeats() -> (day: String, hr: [HRSample], rr: [RRInterval]) {
+        let start = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970) - 86_400
+        let day = Repository.localDayKey(Date(timeIntervalSince1970: Double(start)))
+        var hr: [HRSample] = []
+        var rr: [RRInterval] = []
+        for i in 0..<(24 * 3_600) {
+            let asleep = i >= 16 * 3_600
+            let phase = asleep ? i - 16 * 3_600 : i
+            let bpm = asleep ? 64 + Int(sin(Double(phase) / 900) * 5)
+                             : 74 + Int(sin(Double(phase) / 500) * 11)
+            let ts = start - 16 * 3_600 + i
+            hr.append(HRSample(ts: ts, bpm: bpm))
+            rr.append(RRInterval(ts: ts, rrMs: 900 + (i.isMultiple(of: 2) ? 16 : -16)))
+        }
+        return (day, hr, rr)
+    }
+
     private func lastNight() -> [HRSample] {
         let start = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970) - 86_400
         return (0..<(24 * 3_600)).map { i in

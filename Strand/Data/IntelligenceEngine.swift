@@ -2057,6 +2057,23 @@ final class IntelligenceEngine: ObservableObject {
         Self.mergeNightlyIntoHistory(&histHrvByDay, nightlyHrvByDay)
         Self.mergeNightlyIntoHistory(&histRhrByDay, nightlyRhrByDay)
         Self.mergeNightlyIntoHistory(&histRespByDay, nightlyRespByDay)
+        // A recent-first pass scores three nights, too few to seed the baseline on its own: for a strap-only
+        // wearer it scored recovery as nil and wrote that over three good days. Fill the baseline with the
+        // computed nights already stored for the rest of the full window, the ones the full pass would have
+        // scored itself; this pass's own nights and any imported night still win, as above.
+        if recentOnly {
+            let seedFrom = AnalyticsEngine.dayString(nowLocalMidnight - 20 * 86_400, offsetSec: tzOffset)
+            let stored = (try? await store.dailyMetrics(deviceId: computedId, from: seedFrom,
+                                                        to: "9999-12-31")) ?? []
+            var storedHrv: [String: Double?] = [:]
+            var storedRhr: [String: Double?] = [:]
+            for d in stored where nightlyHrvByDay[d.day] == nil && nightlyRhrByDay[d.day] == nil {
+                storedHrv[d.day] = d.avgHrv
+                storedRhr[d.day] = d.restingHr.map(Double.init)
+            }
+            Self.mergeNightlyIntoHistory(&histHrvByDay, storedHrv)
+            Self.mergeNightlyIntoHistory(&histRhrByDay, storedRhr)
+        }
         // Which SOURCE measured each night's respiration — the input `Baselines.deviceEraEpoch` (#459)
         // needs, and respiration is now a metric that requires it: a WHOOP export reports its OWN measured
         // rate (~16.1 for this history) while an Oura ring reports the rate its firmware measured (~14.6),

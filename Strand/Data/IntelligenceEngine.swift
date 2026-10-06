@@ -46,6 +46,11 @@ final class IntelligenceEngine: ObservableObject {
     /// `defer` re-invokes `analyzeRecent(force: true)` ONCE when it clears. A single re-arm (the flag is
     /// cleared BEFORE the re-invoke) bounds it to one extra pass , no recompute storm.
     private var pendingForcedRescore = false
+    /// Set beside `pendingForcedRescore` only by the #899 heal re-arm, which must re-score the SAME window the
+    /// healed pass covered. Any other re-arm is a new trigger (an offload landing mid-pass) and wants an
+    /// ordinary window: re-running a one-time history repair for it repeated a 4.7-hour pass back to back on a
+    /// field phone, every one with an offload landing inside it, so the repair never recorded itself done.
+    private var pendingRearmSameWidth = false
     /// Uptime the pass holding `computing` started at, and how many days it covers; nil when none is running.
     private var runningPassStart: UInt64?
     private var runningPassDays = 0
@@ -916,14 +921,19 @@ final class IntelligenceEngine: ObservableObject {
             runningPassStart = nil
             if pendingForcedRescore {
                 pendingForcedRescore = false
+                let sameWidth = pendingRearmSameWidth
+                pendingRearmSameWidth = false
                 // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass
                 // must re-score the same width, not the default 21 days (Kotlin re-passes with the same
                 // maxDays; keep the platforms in lockstep).
                 // A recent-first pass re-arms the FULL window: the trigger it held off wants the whole pass.
+                // A history repair re-armed by an ordinary trigger re-arms an ordinary window, without the
+                // repair's completion callback, which this pass has already delivered.
+                let repairDone = preserveUnscoredHistory && !sameWidth
                 Task {
-                    await self.analyzeRecent(maxDays: recentOnly ? 21 : maxDays, force: true,
-                                             preserveUnscoredHistory: preserveUnscoredHistory,
-                                             onPersisted: onPersisted)
+                    await self.analyzeRecent(maxDays: (recentOnly || repairDone) ? 21 : maxDays, force: true,
+                                             preserveUnscoredHistory: preserveUnscoredHistory && !repairDone,
+                                             onPersisted: repairDone ? nil : onPersisted)
                 }
             }
         }
@@ -3022,6 +3032,7 @@ final class IntelligenceEngine: ObservableObject {
             if !healRearmedThisCycle {
                 healRearmedThisCycle = true
                 pendingForcedRescore = true
+                pendingRearmSameWidth = true
             }
         } else {
             healRearmedThisCycle = false
@@ -3089,21 +3100,24 @@ final class IntelligenceEngine: ObservableObject {
             diagnosticSink?("re-score: debt NOT settled — a newer re-score was recorded while this pass "
                             + "was running, so the mark stays and another pass will run (#1681)", nil)
         }
-        if !Task.isCancelled && !pendingForcedRescore { onPersisted?() }
+        // A pending heal re-pass means this window's result is not final yet, and that re-pass carries
+        // `onPersisted`. A trigger that merely landed mid-pass does not: this pass's window is done.
+        if !Task.isCancelled && !(pendingForcedRescore && pendingRearmSameWidth) { onPersisted?() }
     }
 
     /// Nights a recent-first pass scores: today, last night and the one before, so a night that lands late
     /// is still covered.
     nonisolated static let recentFirstDays = 3
 
-    /// Whether a pass should first run the short recent-first pass. Only for a full window (wider than the
-    /// recent pass, and not a history repair, which has its own resume), never from inside the recent pass,
-    /// and only when it is needed: the last full pass was cut short, or this one starts in the background,
-    /// where a full window may not get the time it needs. A foreground pass on a healthy install is unchanged.
+    /// Whether a pass should first run the short recent-first pass. Only for a window wider than the recent
+    /// pass, never from inside the recent pass, and only when it is needed: the last full pass was cut short,
+    /// or this one starts in the background, where a full window may not get the time it needs. A one-time
+    /// history repair qualifies too: it holds the lock for hours on a large store, and every night scored in
+    /// the meantime waits behind it. A foreground pass on a healthy install is unchanged.
     nonisolated static func runsRecentFirst(maxDays: Int, recentOnly: Bool, preserveUnscoredHistory: Bool,
                                             owedFromInterruptedPass: Bool, backgrounded: Bool) -> Bool {
-        guard maxDays > recentFirstDays, !recentOnly, !preserveUnscoredHistory else { return false }
-        return owedFromInterruptedPass || backgrounded
+        guard maxDays > recentFirstDays, !recentOnly else { return false }
+        return owedFromInterruptedPass || backgrounded || preserveUnscoredHistory
     }
 
     /// UserDefaults key for the #836 idle-tick gate: the complete raw-analysis fingerprint the last completed

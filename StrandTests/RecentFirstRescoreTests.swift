@@ -24,11 +24,12 @@ final class RecentFirstRescoreTests: XCTestCase {
         // Needed: the last full pass was cut short, or this one starts in the background.
         XCTAssertTrue(runs(21, interrupted: true))
         XCTAssertTrue(runs(21, background: true))
-        // Never from inside the recent pass, never for a window no wider than it, never for a history repair.
+        // Never from inside the recent pass, never for a window no wider than it.
         XCTAssertFalse(runs(21, recentOnly: true, interrupted: true, background: true))
         XCTAssertFalse(runs(IntelligenceEngine.recentFirstDays, interrupted: true))
         XCTAssertFalse(runs(2, background: true))
-        XCTAssertFalse(runs(365, repair: true, interrupted: true))
+        // A one-time history repair holds the lock for hours: the newest nights go first, always.
+        XCTAssertTrue(runs(4_000, repair: true))
     }
 
     /// The recent pass persists scores but is not the full window: it must leave the watermark, the owed
@@ -87,6 +88,57 @@ final class RecentFirstRescoreTests: XCTestCase {
         }
         XCTAssertNotNil(defaults.string(forKey: "noop.analyzeWatermark"))
         XCTAssertFalse(RescoreBackgroundScheduler.isRescoreOwed)
+    }
+
+    /// A trigger landing mid-way through a one-time history repair wants an ordinary window afterwards. It
+    /// used to re-run the whole repair, and withhold the repair's completion while it did, so on a phone
+    /// whose strap offloads during every long pass the repair repeated back to back and never finished.
+    func testATriggerDuringAHistoryRepairReArmsAnOrdinaryWindow() async throws {
+        let defaults = UserDefaults.standard
+        let keys = ["noop.analyzeWatermark", RescoreBackgroundScheduler.owedKey,
+                    RescoreBackgroundScheduler.owedTokenKey, RescoreBackgroundScheduler.lastPassSecondsKey,
+                    DayCycleMode.storageKey]
+        let saved = keys.map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(DayCycleMode.midnight.rawValue, forKey: DayCycleMode.storageKey)
+
+        let store = try await WhoopStore.inMemory()
+        let registry = DeviceRegistryStore(dbQueue: store.registryWriter)
+        try registry.add(PairedDevice(id: active, brand: "WHOOP", model: "5.0",
+            sourceKind: .liveBLE, capabilities: [.hr, .hrv], status: .active, addedAt: 2, lastSeenAt: 2))
+        _ = try await store.insert(Streams(hr: lastNight()), deviceId: active)
+        let repo = Repository(deviceId: active)
+        repo.setStoreForTesting(store)
+        let engine = IntelligenceEngine(repo: repo, profile: ProfileStore(), deviceId: canonical)
+        var lines: [String] = []
+        var injected = false
+        engine.diagnosticSink = { line, _ in
+            lines.append(line)
+            // An offload's forced re-score lands while the repair holds the lock.
+            if !injected, line.hasPrefix("re-score: trigger=repair-test") {
+                injected = true
+                Task { @MainActor in await engine.analyzeRecent(force: true) }
+            }
+        }
+        var completions = 0
+        await engine.analyzeRecent(maxDays: 30, triggerLabel: "repair-test", preserveUnscoredHistory: true) {
+            completions += 1
+        }
+        // The follow-up pass runs on its own task; give it time to finish.
+        for _ in 0..<200 where lines.filter({ $0.hasPrefix("re-score: done") }).count < 3 {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(injected)
+        XCTAssertEqual(completions, 1, "the repair finished and must say so, once")
+        XCTAssertEqual(lines.filter { $0.hasPrefix("re-score: trigger=repair-test") }.count, 1,
+                       "the repair must not run again for an ordinary trigger: \(lines.joined(separator: "\n"))")
+        XCTAssertEqual(lines.filter { $0.hasPrefix("re-score: done") }.count, 3,
+                       "recent pass, repair, then one ordinary follow-up")
     }
 
     private func lastNight() -> [HRSample] {

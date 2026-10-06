@@ -43,9 +43,15 @@ enum RescoreBackgroundPolicy {
     /// that holds more than 80% CPU over 60 s (`cpu_resource_fatal`). A cold pass is roughly 144 s of
     /// near-continuous CPU on a large install, so every overnight attempt was killed about 52 s in — 26 kills
     /// on one phone in five nights, each leaving the debt for the next attempt to be killed on. Resting as
-    /// long as it worked holds the pass near 50%. A suspension between rests is harmless: the pass is not
+    /// long as it worked held the pass near 50%. A suspension between rests is harmless: the pass is not
     /// killed by it, it resumes on the next wake, so a pass longer than any single wake still completes.
-    static let backgroundRestPerWorkSecond: Double = 1.0
+    ///
+    /// 50% left too little room on a WHOOP 5/MG, whose strap offloads every few minutes: the offload's own
+    /// decode and inserts run beside the pass, and together they crossed the limit. One field phone was
+    /// killed for CPU 356 times in a day (MetricKit), every background process about 3.5 min in, and no pass
+    /// ever finished. Resting three times as long as it worked holds the pass near 25%, which leaves the
+    /// offload its share under the 80%.
+    static let backgroundRestPerWorkSecond: Double = 3.0
 
     /// The longest single rest. Work measured on the uptime clock can include a suspension the process
     /// spent mid-unit; resting for all of it would stall a pass that has already been idle.
@@ -60,7 +66,8 @@ enum RescoreBackgroundPolicy {
     /// full-history pass held the re-score lock from 21:34 until after 11:00 the next day. Every post-offload
     /// pass in between returned at the lock, so that morning's night was never scored. Working for ten seconds
     /// before resting ten keeps the same ~50% ceiling under iOS's 80%-over-60 s kill, with one suspension
-    /// opportunity per ten seconds of work instead of one per night.
+    /// opportunity per ten seconds of work instead of one per night. (At three seconds' rest per second of
+    /// work, ten seconds of work rests thirty, which `maxBackgroundRestSeconds` allows in full.)
     static let backgroundWorkQuantumSeconds: Double = 10
 
     /// Seconds to rest after `workSeconds` of re-score work done since the last rest. Zero until a quantum of

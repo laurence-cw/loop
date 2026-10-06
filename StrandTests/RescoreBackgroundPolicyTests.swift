@@ -85,9 +85,13 @@ final class RescoreBackgroundPolicyTests: XCTestCase {
 
     // MARK: - Pacing
 
-    /// Resting as long as it worked holds a backgrounded pass near 50% CPU, under the 80% iOS kills at.
-    func testABackgroundedPassRestsAsLongAsItWorked() {
-        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: 12, isBackground: true), 12)
+    /// Resting three times as long as it worked holds a backgrounded pass near 25% CPU, leaving a strap
+    /// offload running beside it room under the 80% iOS kills at.
+    func testABackgroundedPassRestsThreeTimesAsLongAsItWorked() {
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: 10, isBackground: true), 30)
+        // The cap still bounds a long measurement.
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: 12, isBackground: true),
+                       RescoreBackgroundPolicy.maxBackgroundRestSeconds)
     }
 
     /// Short units run back to back until a quantum of work has built up: every rest is a chance for iOS to
@@ -96,7 +100,9 @@ final class RescoreBackgroundPolicyTests: XCTestCase {
         let quantum = RescoreBackgroundPolicy.backgroundWorkQuantumSeconds
         XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: 0.05, isBackground: true), 0)
         XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: quantum - 0.01, isBackground: true), 0)
-        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: quantum, isBackground: true), quantum)
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: quantum, isBackground: true),
+                       min(quantum * RescoreBackgroundPolicy.backgroundRestPerWorkSecond,
+                           RescoreBackgroundPolicy.maxBackgroundRestSeconds))
     }
 
     /// No CPU limit applies in the foreground, and the user is waiting on the result.
@@ -121,7 +127,7 @@ final class RescoreBackgroundPolicyTests: XCTestCase {
 
     /// The shipped constants are the ones the app uses; pin them so a change is deliberate.
     func testTheShippedPacingConstants() {
-        XCTAssertEqual(RescoreBackgroundPolicy.backgroundRestPerWorkSecond, 1.0)
+        XCTAssertEqual(RescoreBackgroundPolicy.backgroundRestPerWorkSecond, 3.0)
         XCTAssertEqual(RescoreBackgroundPolicy.maxBackgroundRestSeconds, 30)
     }
 }

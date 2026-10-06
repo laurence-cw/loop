@@ -70,6 +70,27 @@ enum RescoreBackgroundPolicy {
     /// work, ten seconds of work rests thirty, which `maxBackgroundRestSeconds` allows in full.)
     static let backgroundWorkQuantumSeconds: Double = 10
 
+    /// The share of one core a backgrounded process is held to, measured over the last minute. iOS kills at
+    /// 80%; the offload, live heart rate and logging beside the pass need room under that.
+    static let backgroundCPUShareTarget: Double = 0.4
+
+    /// How far back a pace decision looks: iOS judges CPU over a minute.
+    static let cpuWindowSeconds: Double = 60
+
+    /// The longest single CPU-paced rest. Long enough to bring a minute at 120% back under the target.
+    static let maxCPURestSeconds: Double = 120
+
+    /// Seconds to rest so that `cpuSeconds` of process CPU over the last `wallSeconds` falls to
+    /// `backgroundCPUShareTarget`, given no further CPU while resting. Zero in the foreground, under the
+    /// target, or for a window too short to judge (under five seconds); capped at `maxCPURestSeconds`.
+    static func restSeconds(cpuSeconds: Double, wallSeconds: Double, isBackground: Bool) -> Double {
+        guard isBackground, cpuSeconds.isFinite, wallSeconds.isFinite, wallSeconds >= 5, cpuSeconds > 0 else {
+            return 0
+        }
+        let needed = cpuSeconds / backgroundCPUShareTarget - wallSeconds
+        return min(max(needed, 0), maxCPURestSeconds)
+    }
+
     /// Seconds to rest after `workSeconds` of re-score work done since the last rest. Zero until a quantum of
     /// work has accumulated (`backgroundWorkQuantumSeconds`), and always zero in the foreground, where no CPU
     /// limit applies and the user is waiting on the result. A non-finite measurement rests zero.
@@ -114,6 +135,16 @@ enum RescoreBackgroundPolicy {
         }
 
         return .run
+    }
+
+    /// Whether a pass should not start in ordinary background time at all, and wait instead for a background
+    /// processing task (no CPU limit) or the app being opened: when the last two background starts on this
+    /// install never finished (`RescoreBackgroundScheduler.unfinishedBackgroundAttempts`). Never in the
+    /// foreground or inside a processing task. A pass that completes anywhere resets the count, so an
+    /// install whose background passes do finish keeps scoring in the background as before.
+    static func standsDownInBackground(isBackground: Bool, inProcessingTask: Bool,
+                                       unfinishedBackgroundAttempts: Int) -> Bool {
+        isBackground && !inProcessingTask && unfinishedBackgroundAttempts >= 2
     }
 
     /// How long after an attempt that did not finish a backgrounded offload waits before trying again.

@@ -211,6 +211,57 @@ final class RecentFirstRescoreTests: XCTestCase {
         return (day, hr, rr)
     }
 
+    /// Two triggers at once (an offload and a re-point, both at launch) ran two passes side by side on a
+    /// field phone. The second must queue behind the first and run after it, never beside it.
+    func testTwoTriggersAtOnceRunOnePassThenTheOther() async throws {
+        let defaults = UserDefaults.standard
+        let keys = ["noop.analyzeWatermark", RescoreBackgroundScheduler.owedKey,
+                    RescoreBackgroundScheduler.owedTokenKey, RescoreBackgroundScheduler.lastPassSecondsKey,
+                    DayCycleMode.storageKey]
+        let saved = keys.map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(DayCycleMode.midnight.rawValue, forKey: DayCycleMode.storageKey)
+
+        let store = try await WhoopStore.inMemory()
+        let registry = DeviceRegistryStore(dbQueue: store.registryWriter)
+        try registry.add(PairedDevice(id: active, brand: "WHOOP", model: "5.0",
+            sourceKind: .liveBLE, capabilities: [.hr, .hrv], status: .active, addedAt: 2, lastSeenAt: 2))
+        _ = try await store.insert(Streams(hr: lastNight()), deviceId: active)
+        let repo = Repository(deviceId: active)
+        repo.setStoreForTesting(store)
+        let engine = IntelligenceEngine(repo: repo, profile: ProfileStore(), deviceId: canonical)
+        var lines: [String] = []
+        engine.diagnosticSink = { line, _ in lines.append(line) }
+
+        async let first: Void = engine.analyzeRecent(maxDays: 5, force: true)
+        async let second: Void = engine.analyzeRecent(maxDays: 5, force: true)
+        _ = await (first, second)
+        for _ in 0..<200 where lines.filter({ $0.hasPrefix("re-score: done") }).count < 2 {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let starts = lines.indices.filter { lines[$0].hasPrefix("re-score: trigger=") }
+        let done = lines.indices.filter { lines[$0].hasPrefix("re-score: done") }
+        XCTAssertEqual(done.count, 2, lines.joined(separator: "\n"))
+        XCTAssertEqual(starts.count, 2, lines.joined(separator: "\n"))
+        if starts.count == 2, let firstDone = done.first {
+            XCTAssertGreaterThan(starts[1], firstDone, "the second pass started before the first finished")
+        }
+    }
+
+    func testBackgroundStandsDownOnlyAfterTwoUnfinishedAttempts() {
+        typealias P = RescoreBackgroundPolicy
+        XCTAssertFalse(P.standsDownInBackground(isBackground: true, inProcessingTask: false, unfinishedBackgroundAttempts: 1))
+        XCTAssertTrue(P.standsDownInBackground(isBackground: true, inProcessingTask: false, unfinishedBackgroundAttempts: 2))
+        // Never in the foreground, and never inside a processing task, where iOS lifts the CPU limit.
+        XCTAssertFalse(P.standsDownInBackground(isBackground: false, inProcessingTask: false, unfinishedBackgroundAttempts: 9))
+        XCTAssertFalse(P.standsDownInBackground(isBackground: true, inProcessingTask: true, unfinishedBackgroundAttempts: 9))
+    }
+
     private func lastNight() -> [HRSample] {
         let start = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970) - 86_400
         return (0..<(24 * 3_600)).map { i in

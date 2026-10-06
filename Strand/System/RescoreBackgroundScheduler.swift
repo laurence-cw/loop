@@ -59,6 +59,21 @@ enum RescoreBackgroundScheduler {
 
     static var isRescoreOwed: Bool { UserDefaults.standard.bool(forKey: owedKey) }
 
+    /// Passes started in ordinary background time since the last one that completed. On a field WHOOP 5/MG
+    /// phone a single night's analysis runs above one core for over a minute, which iOS's background CPU
+    /// limit kills mid-unit however the pass is paced around it, and the strap's next offload relaunched
+    /// the app into the same pass every few minutes all day. Once two in a row have not finished, ordinary
+    /// background time stops trying (`RescoreBackgroundPolicy.standsDownInBackground`) and the work waits
+    /// for a background processing task, where iOS applies no CPU limit, or for the app being opened.
+    static let unfinishedBackgroundAttemptsKey = "loop.rescoreUnfinishedBackgroundAttempts"
+    static var unfinishedBackgroundAttempts: Int {
+        UserDefaults.standard.integer(forKey: unfinishedBackgroundAttemptsKey)
+    }
+
+    /// True while a background processing task is running the deferred pass: iOS lifts the CPU limit for
+    /// these, so the pass neither paces itself nor counts as an ordinary background attempt.
+    nonisolated(unsafe) static var inProcessingTask = false
+
     /// True only while the outstanding debt came from a completed-but-unsettled pass. Cleared by the next
     /// `markRescoreOwed()`, so a debt recorded by a pass that then dies reverts to forcing.
     static var isOwedAfterCompletedPass: Bool {
@@ -90,11 +105,18 @@ enum RescoreBackgroundScheduler {
     /// other caller (the deferral path) can ignore it, since it is not the one that will settle up.
     /// - Parameter passStarting: the caller is a pass about to work (not the deferral path), so the attempt
     ///   time is recorded for `RescoreBackgroundPolicy.interruptedRetryCooldownSeconds`.
+    /// - Parameter countsAttempt: false when this pass already counted itself (a full pass that stamped its
+    ///   attempt before its recent-first pass), so one pass is one attempt.
     @discardableResult
-    static func markRescoreOwed(passStarting: Bool = false) -> String {
+    static func markRescoreOwed(passStarting: Bool = false, countsAttempt: Bool = true) -> String {
         let token = UUID().uuidString
         if passStarting {
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastAttemptStartedAtKey)
+            // Counted until a pass completes: a background start that never reaches the end is a pass iOS
+            // killed (see `unfinishedBackgroundAttempts`).
+            if countsAttempt && isBackgrounded && !inProcessingTask {
+                UserDefaults.standard.set(unfinishedBackgroundAttempts + 1, forKey: unfinishedBackgroundAttemptsKey)
+            }
         }
         UserDefaults.standard.set(true, forKey: owedKey)
         UserDefaults.standard.set(token, forKey: owedTokenKey)
@@ -134,6 +156,7 @@ enum RescoreBackgroundScheduler {
     /// while leaving the mark set looks identical to one that cleared it unless something says so.
     @discardableResult
     static func markRescoreCompleted(seconds: Double, owedToken: String?) -> Bool {
+        UserDefaults.standard.set(0, forKey: unfinishedBackgroundAttemptsKey)
         let settled = maySettleDebt(capturedToken: owedToken, currentToken: currentOwedToken)
         if settled {
             UserDefaults.standard.set(false, forKey: owedKey)
@@ -241,18 +264,45 @@ enum RescoreBackgroundScheduler {
             + " backgrounded=\(backgroundedAtEnd)"
     }
 
-    /// Rest between units of re-score work when backgrounded, so the pass stays under iOS's background CPU
-    /// limit instead of being killed by it (`RescoreBackgroundPolicy.backgroundRestPerWorkSecond`). `mark` is
-    /// the uptime the work since the last rest started at, in nanoseconds. It is left alone until a quantum of
-    /// work has built up (`backgroundWorkQuantumSeconds`), so short units run back to back, and it is reset
-    /// after a rest or in the foreground.
-    nonisolated static func paceIfBackgrounded(since mark: inout UInt64) async {
-        let workSeconds = Double(DispatchTime.now().uptimeNanoseconds &- mark) / 1_000_000_000
-        let background = await MainActor.run { isBackgrounded }
-        let rest = RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: workSeconds, isBackground: background)
-        if rest > 0 { try? await Task.sleep(nanoseconds: UInt64(rest * 1_000_000_000)) }
-        if rest > 0 || !background { mark = DispatchTime.now().uptimeNanoseconds }
+    /// Rest between units of re-score work when backgrounded, so the PROCESS stays under iOS's background CPU
+    /// limit instead of being killed by it.
+    ///
+    /// Paced on the process's measured CPU over the last minute (`CPUWindow`), not on how long the pass has
+    /// been working: a field 5/MG phone measured 100–120% (more than one core) for whole minutes, so resting
+    /// as long as the pass had worked still left it over the limit, and the offload and live heart rate beside
+    /// the pass count against the same limit. `mark` is kept for the callers' bookkeeping; `label` names the
+    /// point in the pass, for the background pace log.
+    nonisolated static func paceIfBackgrounded(since mark: inout UInt64, at label: String = "") async {
+        let background = await MainActor.run { isBackgrounded && !inProcessingTask }
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard background, let cpu = processCPUSeconds() else {
+            cpuWindow.reset()
+            mark = now
+            return
+        }
+        let (cpuInWindow, wallInWindow) = cpuWindow.record(cpu: cpu, uptimeNanos: now)
+        let rest = RescoreBackgroundPolicy.restSeconds(cpuSeconds: cpuInWindow, wallSeconds: wallInWindow,
+                                                       isBackground: true)
+        if let paceLog {
+            let share = wallInWindow > 0 ? Int((cpuInWindow / wallInWindow * 100).rounded()) : 0
+            paceLog(String(format: "re-score: pace %@ cpu=%d%% over %.0fs rest=%.0fs",
+                           label.isEmpty ? "-" : label, share, wallInWindow, rest))
+        }
+        if rest > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(rest * 1_000_000_000))
+            if let after = processCPUSeconds() {
+                _ = cpuWindow.record(cpu: after, uptimeNanos: DispatchTime.now().uptimeNanoseconds)
+            }
+        }
+        mark = DispatchTime.now().uptimeNanoseconds
     }
+
+    /// Where background pace decisions are logged (one line per pace point while backgrounded); nil logs
+    /// nothing. Set once at launch.
+    nonisolated(unsafe) static var paceLog: (@Sendable (String) -> Void)?
+
+    /// The process's CPU readings at recent pace points, so a pace decision can see the last minute.
+    nonisolated private static let cpuWindow = CPUWindow()
 
     /// Hold an execution assertion for the duration of `work` so a SHORT pass is not suspended halfway.
     /// A long one still outlives the grant; the assertion's expiry handler is where that becomes visible
@@ -298,6 +348,8 @@ enum RescoreBackgroundScheduler {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
             let completion = TaskCompletionGuard(task: task)
             let worker = Task { @MainActor in
+                inProcessingTask = true
+                defer { inProcessingTask = false }
                 await operation()
                 guard !Task.isCancelled else { return }
                 // Re-arm only while work remains. A processing task is single-shot, and re-submitting

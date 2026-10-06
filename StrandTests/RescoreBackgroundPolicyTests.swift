@@ -125,6 +125,43 @@ final class RescoreBackgroundPolicyTests: XCTestCase {
         XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(afterWorkSeconds: .infinity, isBackground: true), 0)
     }
 
+    // MARK: - CPU pacing
+
+    /// A minute at 110% of a core (a field 5/MG phone, killed at the second such minute) rests until the
+    /// minute averages the target share.
+    func testAMinuteOverOneCoreRestsDownToTheTarget() {
+        let rest = RescoreBackgroundPolicy.restSeconds(cpuSeconds: 66, wallSeconds: 60, isBackground: true)
+        XCTAssertEqual(rest, 66 / RescoreBackgroundPolicy.backgroundCPUShareTarget - 60, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(66 / (60 + rest), RescoreBackgroundPolicy.backgroundCPUShareTarget + 0.001)
+    }
+
+    /// Under the target, in the foreground, or over too short a window to judge: no rest.
+    func testCPUPacingRestsOnlyWhenItMust() {
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(cpuSeconds: 10, wallSeconds: 60, isBackground: true), 0)
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(cpuSeconds: 66, wallSeconds: 60, isBackground: false), 0)
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(cpuSeconds: 4, wallSeconds: 3, isBackground: true), 0)
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(cpuSeconds: .nan, wallSeconds: 60, isBackground: true), 0)
+    }
+
+    /// A rest is capped, so one bad reading cannot stall a pass for long.
+    func testACPURestIsCapped() {
+        XCTAssertEqual(RescoreBackgroundPolicy.restSeconds(cpuSeconds: 10_000, wallSeconds: 60, isBackground: true),
+                       RescoreBackgroundPolicy.maxCPURestSeconds)
+    }
+
+    /// The window reports CPU over the last minute, not since launch, so a heavy minute after a quiet hour is
+    /// still seen as heavy.
+    func testTheCPUWindowLooksBackOneMinute() {
+        let w = CPUWindow()
+        let s: UInt64 = 1_000_000_000
+        XCTAssertEqual(w.record(cpu: 0, uptimeNanos: 0).cpu, 0)
+        _ = w.record(cpu: 60, uptimeNanos: 3_600 * s)        // a quiet hour at ~1.7%
+        _ = w.record(cpu: 93, uptimeNanos: 3_630 * s)
+        let last = w.record(cpu: 126, uptimeNanos: 3_660 * s) // then a minute at 110%
+        XCTAssertEqual(last.wall, 60, accuracy: 0.001)
+        XCTAssertEqual(last.cpu, 66, accuracy: 0.001)
+    }
+
     /// The shipped constants are the ones the app uses; pin them so a change is deliberate.
     func testTheShippedPacingConstants() {
         XCTAssertEqual(RescoreBackgroundPolicy.backgroundRestPerWorkSecond, 3.0)

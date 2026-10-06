@@ -46,6 +46,10 @@ final class IntelligenceEngine: ObservableObject {
     /// `defer` re-invokes `analyzeRecent(force: true)` ONCE when it clears. A single re-arm (the flag is
     /// cleared BEFORE the re-invoke) bounds it to one extra pass , no recompute storm.
     private var pendingForcedRescore = false
+    /// Set from the moment a full pass is accepted until it either claims `computing` or returns. Two triggers
+    /// at launch (an offload and a re-point) both passed `guard !computing` while the first was still
+    /// awaiting its gates, and ran two passes side by side, at twice the CPU, on a field phone.
+    private var preparingPass = false
     /// Set beside `pendingForcedRescore` only by the #899 heal re-arm, which must re-score the SAME window the
     /// healed pass covered. Any other re-arm is a new trigger (an offload landing mid-pass) and wants an
     /// ordinary window: re-running a one-time history repair for it repeated a 4.7-hour pass back to back on a
@@ -775,7 +779,7 @@ final class IntelligenceEngine: ObservableObject {
         // in-flight pass already covers the same window). But a FORCED call is a real update path (a
         // post-backfill rescore after a sync) , dropping it would leave a freshly-synced night unscored
         // until the next cycle. Re-arm instead: flag it so the running pass's `defer` re-invokes once.
-        guard !computing else {
+        guard !computing && (recentOnly || !preparingPass) else {
             if force {
                 // Said once per running pass, not per trigger: a pass that holds the lock for hours otherwise
                 // turns every post-offload re-score into a silent no-op, and the log shows syncs but no scores.
@@ -785,6 +789,33 @@ final class IntelligenceEngine: ObservableObject {
                 }
                 pendingForcedRescore = true
             }
+            return
+        }
+        if !recentOnly {
+            preparingPass = true
+        }
+        defer {
+            if !recentOnly {
+                preparingPass = false
+                // Returned before claiming the lock (a gate, or standing down): hand a trigger that queued
+                // behind this pass's preparation on, as the running pass's own re-arm would have.
+                if pendingForcedRescore && !computing {
+                    pendingForcedRescore = false
+                    Task { await self.analyzeRecent(force: true) }
+                }
+            }
+        }
+        // Ordinary background time on this install has not been finishing passes (iOS kills them for CPU):
+        // leave the work owed for a background processing task or the next foreground, instead of being
+        // relaunched into the same doomed pass by every offload.
+        if !recentOnly && RescoreBackgroundPolicy.standsDownInBackground(
+            isBackground: RescoreBackgroundScheduler.isBackgrounded,
+            inProcessingTask: RescoreBackgroundScheduler.inProcessingTask,
+            unfinishedBackgroundAttempts: RescoreBackgroundScheduler.unfinishedBackgroundAttempts) {
+            RescoreBackgroundScheduler.markRescoreOwed()
+            RescoreBackgroundScheduler.schedule()
+            diagnosticSink?("re-score: left for a background processing task — the last "
+                            + "\(RescoreBackgroundScheduler.unfinishedBackgroundAttempts) background passes did not finish", nil)
             return
         }
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
@@ -865,6 +896,7 @@ final class IntelligenceEngine: ObservableObject {
         // cut short, or this one starts in the background, score the newest nights first in a short pass
         // that persists on its own, then run the full window as before. If the full pass is cut short too,
         // the recent nights are already in.
+        var stampedBeforeRecent = false
         if Self.runsRecentFirst(maxDays: maxDays, recentOnly: recentOnly,
                                 preserveUnscoredHistory: preserveUnscoredHistory,
                                 owedFromInterruptedPass: RescoreBackgroundScheduler.isRescoreOwed
@@ -872,6 +904,10 @@ final class IntelligenceEngine: ObservableObject {
                                 backgrounded: RescoreBackgroundScheduler.isBackgrounded) {
             diagnosticSink?("re-score: recent-first — scoring the newest \(Self.recentFirstDays) nights before the "
                             + "\(maxDays)-day window", nil)
+            // Stamp the attempt now, not after the recent pass: a process killed during it must still count
+            // as an attempt, or the retry cooldown and the background stand-down never see it.
+            RescoreBackgroundScheduler.markRescoreOwed(passStarting: true)
+            stampedBeforeRecent = true
             await analyzeRecent(maxDays: Self.recentFirstDays, force: true, triggerLabel: "recent-first",
                                 recentOnly: true)
             // The short pass released the lock; another trigger may have taken it while we awaited.
@@ -910,7 +946,8 @@ final class IntelligenceEngine: ObservableObject {
         // Kotlin post-offload gate makes the same point in its own words: "captured before the run,
         // written only on success".
         // A recent-first pass is not the debt: leave the mark to the full pass that owes it.
-        let owedToken = recentOnly ? nil : RescoreBackgroundScheduler.markRescoreOwed(passStarting: true)
+        let owedToken = recentOnly ? nil
+            : RescoreBackgroundScheduler.markRescoreOwed(passStarting: true, countsAttempt: !stampedBeforeRecent)
         // #899-A re-arm: clear the lock, then if a forced rescore was dropped while this pass held it,
         // run it ONCE. The flag is cleared BEFORE the re-invoke (a single re-arm), so a forced call landing
         // DURING the re-invoke re-arms it again but a quiet one does not , this can never recurse unbounded.
@@ -1234,7 +1271,7 @@ final class IntelligenceEngine: ObservableObject {
             }
             var paceMark = DispatchTime.now().uptimeNanoseconds
             for offset in 0..<maxDays {
-                if offset > 0 { await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark) }
+                if offset > 0 { await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark, at: "day\(offset)") }
                 let dayStart = nowLocalMidnight - offset * 86_400
                 let day = AnalyticsEngine.dayString(dayStart, offsetSec: tzOffset)
                 // Read a generous window around the night that ends on `day`; the stager finds the span.
@@ -1341,7 +1378,7 @@ final class IntelligenceEngine: ObservableObject {
                     unlabelledAliasOfWhoop5: activeWhoop5RR && owner == Repository.whoopSource)) ?? true
                 let rr = await rrWindow.rows(owner: owner, from: from, to: to, allowReuse: !strictWhoop5RR)
                 // Rest point inside the night (see the comment before `tScore0` below for why).
-                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
+                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark, at: "day\(offset).rr")
                 // `forScoring` drops an Oura ring's respiration rows: those are the ring's OWN per-window
                 // RATE (0x6A, milli-bpm, ~1 row per 5 min), stored as instrumentation, while the stager
                 // reads this stream as a ~1 Hz raw ADC waveform. Refusing by provenance keeps the
@@ -1367,7 +1404,7 @@ final class IntelligenceEngine: ObservableObject {
                 // means on the DailyMetric. Empty on a 5/MG (no v24 spo2 channels) → the raw means stay nil.
                 let spo2 = (try? await store.spo2Samples(deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
                 // Rest point inside the night (see the comment before `tScore0` below for why).
-                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
+                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark, at: "day\(offset).spo2")
                 // #938: the strap family that WROTE this owner's skin-temp rows, so analyzeDay converts the raw
                 // register on the right scale (5/MG banks centidegrees, a WHOOP 4.0 v24 banks a raw ADC). The
                 // registry knows each device's model; unknown/non-WHOOP owners fall back to `.whoop5` (the prior
@@ -1559,7 +1596,7 @@ final class IntelligenceEngine: ObservableObject {
                 // and once in `SleepStagerV2`. `paceIfBackgrounded` rests only once a work quantum has built
                 // up and never in the foreground, so these extra checks cost nothing on a light night or with
                 // the app open; on a heavy background night they split the unit into ~10 s pieces.
-                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
+                await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark, at: "day\(offset).score")
                 let tScore0 = Date()
                 dayPrepSeconds += tScore0.timeIntervalSince(tPrep0)
                 // #1770 follow-up: the Effort ring's funnel. Collected here rather than sent straight
@@ -1897,7 +1934,7 @@ final class IntelligenceEngine: ObservableObject {
             // The last night's unit ran straight into the post-loop phases with no rest between them. On a
             // dense 5/MG night that is tens of seconds of CPU already, so rest here before the post-loop adds
             // more; together they held a background process past iOS's CPU limit on every attempt.
-            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
+            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark, at: "loopEnd")
             // #1005: prune the reuse cache to the current 21-day window (the oldest day ages out at
             // midnight) and carry a one-line reuse diagnostic on the same channel as the skipped-day lines.
             let dayCacheWindow = Set((0..<maxDays).map {
@@ -1965,8 +2002,8 @@ final class IntelligenceEngine: ObservableObject {
         // no-op in the foreground, or until ten seconds of work have built up). Timed outside the phase
         // tally: `postLoopMark` is reset after each rest so a rest never reads as a phase's cost.
         var postLoopPaceMark = DispatchTime.now().uptimeNanoseconds
-        func postLoopPace() async {
-            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &postLoopPaceMark)
+        func postLoopPace(_ phase: String) async {
+            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &postLoopPaceMark, at: phase)
             postLoopMark = Date()
         }
 
@@ -2039,7 +2076,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("dayReplay")
-        await postLoopPace()
+        await postLoopPace("dayReplay")
         // ── Seed the baseline from the UNION of imported nightly history + the values just computed.
         // THIS is the BLE-only recovery fix: the "-noop" nightly avgHrv/restingHr finally feed the
         // baseline so a strap-only user crosses Baselines.minNightsSeed and recovery lights up.
@@ -2171,7 +2208,7 @@ final class IntelligenceEngine: ObservableObject {
                                                     to: now, limit: 100_000)) ?? []
 
         markPostLoopPhase("baselines")
-        await postLoopPace()
+        await postLoopPace("baselines")
         // ── Pass 2: re-score ONLY recovery against the now-seeded baseline (cheap, baseline-dependent);
         // every other field was computed once in pass 1. Recovery stays nil until the HRV baseline is
         // usable (≥ minNightsSeed valid nights) , honest cold-start, via RecoveryScorer's usable gate.
@@ -2289,7 +2326,7 @@ final class IntelligenceEngine: ObservableObject {
         var appliedLegacySnapshots: [String: LegacyScoreSnapshot] = [:]
         var paceMark = DispatchTime.now().uptimeNanoseconds
         for night in scoredNights {
-            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
+            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark, at: "score2")
             // #299: scope the edits to THIS day before folding. A userEdited row / hand-logged nap belongs
             // to exactly ONE day — the day its night ENDS on, matching the daily's end-day bucket. `endTs`
             // is stable under a bedtime edit (only the onset/`startTsAdjusted` moves), so end-day is the
@@ -2486,7 +2523,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("score2")
-        await postLoopPace()
+        await postLoopPace("score2")
         // ── Apple-Watch recovery fold (M1 "Watch as a device") ──────────────────────────────────────
         // A watch-only user has apple-health DAILY aggregates (SDNN HRV + resting HR) but no raw stream, so
         // the raw-HR scoring loop above never touched their days and the import left `recovery: nil`. Fill
@@ -2517,7 +2554,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("watchFold")
-        await postLoopPace()
+        await postLoopPace("watchFold")
         // #277 migration: the loop now keys days by the LOCAL calendar day. A prior run (before this
         // fix) wrote the SAME period under UTC-day keys, so without a cleanup an off-by-one UTC row and
         // the new local row would coexist as duplicate days. We reconcile the COMPUTED ("-noop") daily
@@ -2683,7 +2720,7 @@ final class IntelligenceEngine: ObservableObject {
             }
         }
         markPostLoopPhase("persist")
-        await postLoopPace()
+        await postLoopPace("persist")
         // ── Fitness Age (Phase 2) , weekly, keyed to the week's Saturday ────────────────────────────
         // Roll the last 7 computed days into the Nes/HUNT inputs and upsert a weekly Fitness Age (+ an
         // optional VO₂max when a waist is set) under the same "-noop" source. Idempotent on the Saturday
@@ -2742,7 +2779,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("weekly")
-        await postLoopPace()
+        await postLoopPace("weekly")
         // ── Steps ESTIMATE (WHOOP 4.0) , DAILY, keyed to each strap-only day ────────────────────────
         // A WHOOP 4.0 sends no step count over BLE, so for days the phone DIDN'T also count steps we
         // estimate them: calibrate the strap's daily MOTION VOLUME against the phone's real step count
@@ -2820,7 +2857,7 @@ final class IntelligenceEngine: ObservableObject {
             // Sixty days of gravity reads and folds, paced like the scoring loop when backgrounded.
             var stepsPaceMark = DispatchTime.now().uptimeNanoseconds
             for off in 0..<stepsCalDays {
-                if off > 0 { await RescoreBackgroundScheduler.paceIfBackgrounded(since: &stepsPaceMark) }
+                if off > 0 { await RescoreBackgroundScheduler.paceIfBackgrounded(since: &stepsPaceMark, at: "steps\(off)") }
                 let dayMid = Self.midnightLocal(nowLocalMidnight - off * 86_400, offsetSec: tzOffset)
                 let dayEnd = dayMid + 86_400 - 1
                 let dayKey = AnalyticsEngine.dayString(dayMid, offsetSec: tzOffset)
@@ -2946,7 +2983,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("steps")
-        await postLoopPace()
+        await postLoopPace("steps")
         // Drop any freshly-detected session that overlaps a night the user has already hand-corrected.
         // A detected onset can drift second-to-second as more raw data arrives, so without this the
         // re-detected night would upsert as a SECOND row beside the edited one (different startTs ⇒ no
@@ -3002,7 +3039,7 @@ final class IntelligenceEngine: ObservableObject {
             _ = try? await store.persistSessionSleepState(deviceId: computedId, sessionStart: start, states: states)
         }
         markPostLoopPhase("sleepWrite")
-        await postLoopPace()
+        await postLoopPace("sleepWrite")
         // ── Overlap-aware banked-sleep heal (#899) ────────────────────────────────────────────────────
         // An unstable strap clock re-banks the SAME night under a shifted timebase, so successive passes
         // detect it at shifted bounds and the upsert above lands a SECOND row beside the stale one (the
@@ -3088,7 +3125,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("sleepHeal")
-        await postLoopPace()
+        await postLoopPace("sleepHeal")
         // #137: a manually-started workout is scored from sparse live HR at save time , near-zero
         // calories/strain on a 5/MG. Now that offloaded HR may cover the window, re-score the
         // under-sampled ones from that denser data.
@@ -3115,7 +3152,7 @@ final class IntelligenceEngine: ObservableObject {
         if !dailies.isEmpty || !healDropped.isEmpty { await repo.refresh() }
 
         markPostLoopPhase("workouts")
-        await postLoopPace()
+        await postLoopPace("workouts")
         // #836/#sleep-sync: record the complete raw-analysis fingerprint this run scored against, so a later
         // NON-forced tick can short-circuit while it's unchanged. Written ONLY at the end of a completed run (never on an
         // early guard-return), so an interrupted/failed run can't advance the watermark past unscored data.

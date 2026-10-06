@@ -1894,6 +1894,10 @@ final class IntelligenceEngine: ObservableObject {
                 }
                 out.append(scan)
             }
+            // The last night's unit ran straight into the post-loop phases with no rest between them. On a
+            // dense 5/MG night that is tens of seconds of CPU already, so rest here before the post-loop adds
+            // more; together they held a background process past iOS's CPU limit on every attempt.
+            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
             // #1005: prune the reuse cache to the current 21-day window (the oldest day ages out at
             // midnight) and carry a one-line reuse diagnostic on the same channel as the skipped-day lines.
             let dayCacheWindow = Set((0..<maxDays).map {
@@ -1954,6 +1958,16 @@ final class IntelligenceEngine: ObservableObject {
             let now = Date()
             postLoopPhases.append((name: name, seconds: now.timeIntervalSince(postLoopMark)))
             postLoopMark = now
+        }
+        // The post-loop phases ran back to back with no rest: steps alone re-folds sixty days, and with
+        // score2 and the writes it was a minute of unbroken CPU on a field 5/MG phone, enough on its own for
+        // iOS to kill a backgrounded process. Rest between phases on the same quantum as the day loop (a
+        // no-op in the foreground, or until ten seconds of work have built up). Timed outside the phase
+        // tally: `postLoopMark` is reset after each rest so a rest never reads as a phase's cost.
+        var postLoopPaceMark = DispatchTime.now().uptimeNanoseconds
+        func postLoopPace() async {
+            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &postLoopPaceMark)
+            postLoopMark = Date()
         }
 
         // #714: replay each skipped day's diagnostic now that we're back on the main actor (diagnosticSink
@@ -2025,6 +2039,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("dayReplay")
+        await postLoopPace()
         // ── Seed the baseline from the UNION of imported nightly history + the values just computed.
         // THIS is the BLE-only recovery fix: the "-noop" nightly avgHrv/restingHr finally feed the
         // baseline so a strap-only user crosses Baselines.minNightsSeed and recovery lights up.
@@ -2139,6 +2154,7 @@ final class IntelligenceEngine: ObservableObject {
                                                     to: now, limit: 100_000)) ?? []
 
         markPostLoopPhase("baselines")
+        await postLoopPace()
         // ── Pass 2: re-score ONLY recovery against the now-seeded baseline (cheap, baseline-dependent);
         // every other field was computed once in pass 1. Recovery stays nil until the HRV baseline is
         // usable (≥ minNightsSeed valid nights) , honest cold-start, via RecoveryScorer's usable gate.
@@ -2453,6 +2469,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("score2")
+        await postLoopPace()
         // ── Apple-Watch recovery fold (M1 "Watch as a device") ──────────────────────────────────────
         // A watch-only user has apple-health DAILY aggregates (SDNN HRV + resting HR) but no raw stream, so
         // the raw-HR scoring loop above never touched their days and the import left `recovery: nil`. Fill
@@ -2483,6 +2500,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("watchFold")
+        await postLoopPace()
         // #277 migration: the loop now keys days by the LOCAL calendar day. A prior run (before this
         // fix) wrote the SAME period under UTC-day keys, so without a cleanup an off-by-one UTC row and
         // the new local row would coexist as duplicate days. We reconcile the COMPUTED ("-noop") daily
@@ -2648,6 +2666,7 @@ final class IntelligenceEngine: ObservableObject {
             }
         }
         markPostLoopPhase("persist")
+        await postLoopPace()
         // ── Fitness Age (Phase 2) , weekly, keyed to the week's Saturday ────────────────────────────
         // Roll the last 7 computed days into the Nes/HUNT inputs and upsert a weekly Fitness Age (+ an
         // optional VO₂max when a waist is set) under the same "-noop" source. Idempotent on the Saturday
@@ -2706,6 +2725,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("weekly")
+        await postLoopPace()
         // ── Steps ESTIMATE (WHOOP 4.0) , DAILY, keyed to each strap-only day ────────────────────────
         // A WHOOP 4.0 sends no step count over BLE, so for days the phone DIDN'T also count steps we
         // estimate them: calibrate the strap's daily MOTION VOLUME against the phone's real step count
@@ -2780,7 +2800,10 @@ final class IntelligenceEngine: ObservableObject {
             var motionReused = 0
             var motionFolded = 0
             var motionWindow: Set<String> = []
+            // Sixty days of gravity reads and folds, paced like the scoring loop when backgrounded.
+            var stepsPaceMark = DispatchTime.now().uptimeNanoseconds
             for off in 0..<stepsCalDays {
+                if off > 0 { await RescoreBackgroundScheduler.paceIfBackgrounded(since: &stepsPaceMark) }
                 let dayMid = Self.midnightLocal(nowLocalMidnight - off * 86_400, offsetSec: tzOffset)
                 let dayEnd = dayMid + 86_400 - 1
                 let dayKey = AnalyticsEngine.dayString(dayMid, offsetSec: tzOffset)
@@ -2906,6 +2929,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("steps")
+        await postLoopPace()
         // Drop any freshly-detected session that overlaps a night the user has already hand-corrected.
         // A detected onset can drift second-to-second as more raw data arrives, so without this the
         // re-detected night would upsert as a SECOND row beside the edited one (different startTs ⇒ no
@@ -2961,6 +2985,7 @@ final class IntelligenceEngine: ObservableObject {
             _ = try? await store.persistSessionSleepState(deviceId: computedId, sessionStart: start, states: states)
         }
         markPostLoopPhase("sleepWrite")
+        await postLoopPace()
         // ── Overlap-aware banked-sleep heal (#899) ────────────────────────────────────────────────────
         // An unstable strap clock re-banks the SAME night under a shifted timebase, so successive passes
         // detect it at shifted bounds and the upsert above lands a SECOND row beside the stale one (the
@@ -3046,6 +3071,7 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("sleepHeal")
+        await postLoopPace()
         // #137: a manually-started workout is scored from sparse live HR at save time , near-zero
         // calories/strain on a 5/MG. Now that offloaded HR may cover the window, re-score the
         // under-sampled ones from that denser data.
@@ -3072,6 +3098,7 @@ final class IntelligenceEngine: ObservableObject {
         if !dailies.isEmpty || !healDropped.isEmpty { await repo.refresh() }
 
         markPostLoopPhase("workouts")
+        await postLoopPace()
         // #836/#sleep-sync: record the complete raw-analysis fingerprint this run scored against, so a later
         // NON-forced tick can short-circuit while it's unchanged. Written ONLY at the end of a completed run (never on an
         // early guard-return), so an interrupted/failed run can't advance the watermark past unscored data.

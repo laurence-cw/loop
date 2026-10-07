@@ -11,8 +11,25 @@ import UIKit
 enum LoopCPUProbe {
     private static var timer: Timer?
 
+    /// A new build of the app starts its background-attempt count afresh: the count describes what this
+    /// build could not finish, and a build that scores faster should get its own background tries rather
+    /// than inherit the old build's stand-down. Keyed on the executable's modification date, which every
+    /// install changes.
+    private static func resetBackgroundAttemptsOnNewBuild() {
+        let key = "loop.lastBuildStamp"
+        guard let url = Bundle.main.executableURL,
+              let date = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+        else { return }
+        let stamp = String(Int(date.timeIntervalSince1970))
+        if UserDefaults.standard.string(forKey: key) != stamp {
+            UserDefaults.standard.set(stamp, forKey: key)
+            UserDefaults.standard.set(0, forKey: RescoreBackgroundScheduler.unfinishedBackgroundAttemptsKey)
+        }
+    }
+
     static func start(model: AppModel) {
         guard timer == nil else { return }
+        resetBackgroundAttemptsOnNewBuild()
         // Background pace decisions go to the same log, so a kill can be read against what the pass was doing.
         RescoreBackgroundScheduler.paceLog = { [weak model] line in
             Task { @MainActor in model?.live.append(log: AppModel.stamped(line)) }

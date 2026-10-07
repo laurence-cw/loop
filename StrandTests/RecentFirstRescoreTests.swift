@@ -260,6 +260,12 @@ final class RecentFirstRescoreTests: XCTestCase {
         // Never in the foreground, and never inside a processing task, where iOS lifts the CPU limit.
         XCTAssertFalse(P.standsDownInBackground(isBackground: false, inProcessingTask: false, unfinishedBackgroundAttempts: 9))
         XCTAssertFalse(P.standsDownInBackground(isBackground: true, inProcessingTask: true, unfinishedBackgroundAttempts: 9))
+        // It lapses: three hours after the last attempt, ordinary background time gets another try.
+        XCTAssertTrue(P.standsDownInBackground(isBackground: true, inProcessingTask: false,
+                                               unfinishedBackgroundAttempts: 5, secondsSinceLastAttempt: 600))
+        XCTAssertFalse(P.standsDownInBackground(isBackground: true, inProcessingTask: false,
+                                                unfinishedBackgroundAttempts: 5,
+                                                secondsSinceLastAttempt: P.standDownLapseSeconds + 1))
     }
 
     private func lastNight() -> [HRSample] {

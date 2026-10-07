@@ -811,7 +811,8 @@ final class IntelligenceEngine: ObservableObject {
         if !recentOnly && RescoreBackgroundPolicy.standsDownInBackground(
             isBackground: RescoreBackgroundScheduler.isBackgrounded,
             inProcessingTask: RescoreBackgroundScheduler.inProcessingTask,
-            unfinishedBackgroundAttempts: RescoreBackgroundScheduler.unfinishedBackgroundAttempts) {
+            unfinishedBackgroundAttempts: RescoreBackgroundScheduler.unfinishedBackgroundAttempts,
+            secondsSinceLastAttempt: RescoreBackgroundScheduler.secondsSinceLastAttempt) {
             RescoreBackgroundScheduler.markRescoreOwed()
             RescoreBackgroundScheduler.schedule()
             diagnosticSink?("re-score: left for a background processing task — the last "

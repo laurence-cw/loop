@@ -141,11 +141,19 @@ enum RescoreBackgroundPolicy {
     /// processing task (no CPU limit) or the app being opened: when the last two background starts on this
     /// install never finished (`RescoreBackgroundScheduler.unfinishedBackgroundAttempts`). Never in the
     /// foreground or inside a processing task. A pass that completes anywhere resets the count, so an
-    /// install whose background passes do finish keeps scoring in the background as before.
+    /// install whose background passes do finish keeps scoring in the background as before. The stand-down
+    /// lapses `standDownLapseSeconds` after the last attempt, so a phone whose circumstances changed (a new
+    /// build, a lighter night) gets another background try without waiting to be opened.
     static func standsDownInBackground(isBackground: Bool, inProcessingTask: Bool,
-                                       unfinishedBackgroundAttempts: Int) -> Bool {
-        isBackground && !inProcessingTask && unfinishedBackgroundAttempts >= 2
+                                       unfinishedBackgroundAttempts: Int,
+                                       secondsSinceLastAttempt: Double? = nil) -> Bool {
+        guard isBackground, !inProcessingTask, unfinishedBackgroundAttempts >= 2 else { return false }
+        guard let since = secondsSinceLastAttempt, since >= 0 else { return true }
+        return since < standDownLapseSeconds
     }
+
+    /// How long a background stand-down holds before one more background attempt is allowed.
+    static let standDownLapseSeconds: Double = 3 * 3_600
 
     /// How long after an attempt that did not finish a backgrounded offload waits before trying again.
     ///

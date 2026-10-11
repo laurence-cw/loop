@@ -416,9 +416,16 @@ extension LoopActivity {
         a.week = [
             .init(day: "mon", effort: 48, steps: 11_204, kcal: 2_310),
             .init(day: "tue", effort: 35, steps: 8_930, kcal: 2_020),
-            .init(day: "wed", effort: nil, steps: nil, kcal: nil),
-            .init(day: "thu", effort: 58, steps: 13_277, kcal: 1_840),
+            .init(day: "wed", effort: 52, steps: 10_418, kcal: 2_160),
+            .init(day: "thu", effort: 41, steps: 9_652, kcal: 2_080),
+            .init(day: "fri", effort: 63, steps: 14_905, kcal: 2_540),
+            .init(day: "sat", effort: 71, steps: 12_366, kcal: 2_690),
+            .init(day: "sun", effort: 67, steps: 13_277, kcal: 1_840),
         ]
+        // `--loop-preview-missing-week` keeps the older shape, a gap midweek, for the missing-data look.
+        if CommandLine.arguments.contains("--loop-preview-missing-week") {
+            a.week[2] = .init(day: "wed", effort: nil, steps: nil, kcal: nil)
+        }
         a.zoneMinutes = [212, 96, 41, 22, 6]
         a.zoneFloors = [100, 120, 140, 160, 180]
         a.maxHR = 199

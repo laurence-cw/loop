@@ -110,6 +110,8 @@ struct LoopHomeView: View {
             past = await LoopPastDayReader.read(repo: repo, dayKeys: newPages.dropLast().map(\.key), age: profile.age)
             #if DEBUG
             if let preview = LoopPreviewState.requested { today = preview.apply(to: today) }
+            // The demo seed has no step counts; the synthetic school day (`--loop-preview-activity`) does.
+            else if CommandLine.arguments.contains("--loop-preview-activity"), today.steps == nil { today.steps = 13_277 }
             if CommandLine.arguments.contains("--loop-preview-days") { past = LoopPreviewState.pastDays(newPages) }
             #endif
             if !warmed {

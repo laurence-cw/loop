@@ -69,7 +69,10 @@ struct LoopSleepView: View {
             if CommandLine.arguments.contains("--loop-preview-questionable-stages") { sleep.stagesQuestionable = true }
             if let i = CommandLine.arguments.firstIndex(of: "--loop-preview-debt"), i + 1 < CommandLine.arguments.count,
                let m = Double(CommandLine.arguments[i + 1]) { sleep.debtMin = m; sleep.debtNights = 14 }
-            if CommandLine.arguments.contains("--loop-preview-heart-first"), sleep.overnightHR.count < 12 {
+            // `--loop-preview-overnight` fills the overnight heart card in its usual place; `-heart-first`
+            // also moves it to the top.
+            if CommandLine.arguments.contains("--loop-preview-heart-first")
+                || CommandLine.arguments.contains("--loop-preview-overnight"), sleep.overnightHR.count < 12 {
                 // A synthetic night, 11pm to 7am: settles from the 60s to a low in the 40s, then rises.
                 let bed = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970) - 3600
                 sleep.bed = bed; sleep.wake = bed + 8 * 3600

@@ -41,7 +41,15 @@ struct LoopHomeView: View {
     }
 
     private var status: LoopStatus {
-        LoopStatus.resolve(live: live, hasStrap: !(model.deviceRegistry?.devices.isEmpty ?? true))
+        #if DEBUG
+        // `--loop-preview-strap synced` (see LoopStrapGauges) reads as a paired, synced strap here too,
+        // so a demo recording doesn't carry the "Pair your strap" pill.
+        if let i = CommandLine.arguments.firstIndex(of: "--loop-preview-strap"), i + 1 < CommandLine.arguments.count,
+           CommandLine.arguments[i + 1] != "lagged" {
+            return .synced(Date().addingTimeInterval(-6 * 60))
+        }
+        #endif
+        return LoopStatus.resolve(live: live, hasStrap: !(model.deviceRegistry?.devices.isEmpty ?? true))
     }
 
     /// The strap's charge for the evening card. DEBUG `--loop-preview-low-battery` forces 22%.

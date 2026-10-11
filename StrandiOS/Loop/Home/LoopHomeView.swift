@@ -240,6 +240,17 @@ struct LoopHomeView: View {
                 .padding(.horizontal, LoopSpace.edge)
                 .padding(.top, LoopSpace.m)
                 .transition(.opacity)
+            } else if notifyStatus == .denied && behavior.batteryAlerts {
+                // Turned down once, the system never asks again, and the 15% alert then posts nothing
+                // without a word. Say so, and send them to the one place it can be switched back on.
+                LoopNotifyAskCard(title: "Charge alerts are off",
+                                  detail: "Loop can't tell you when your strap gets low. Turn on Notifications for Loop.",
+                                  button: "Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+                .padding(.horizontal, LoopSpace.edge)
+                .padding(.top, LoopSpace.m)
+                .transition(.opacity)
             }
         }
     }
@@ -804,6 +815,9 @@ struct LoopChargeCard: View {
 
 /// The one-time ask for notifications, with what they're for. Disappears once answered either way.
 struct LoopNotifyAskCard: View {
+    var title = "Get a nudge to charge your strap"
+    var detail = "When it drops to 15%, and before bed if it won't last the night."
+    var button = "Turn on"
     let onTurnOn: () -> Void
 
     var body: some View {
@@ -814,17 +828,17 @@ struct LoopNotifyAskCard: View {
                     .foregroundStyle(LoopColor.text)
                     .frame(width: 32)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Get a nudge to charge your strap")
+                    Text(title)
                         .font(LoopFont.rowTitle)
                         .foregroundStyle(LoopColor.text)
-                    Text("When it's low, and before bed if it won't last the night.")
+                    Text(detail)
                         .font(LoopFont.explainer)
                         .foregroundStyle(LoopColor.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Button(action: onTurnOn) {
-                Text("Turn on")
+                Text(button)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(LoopColor.night)
                     .frame(maxWidth: .infinity, minHeight: 44)

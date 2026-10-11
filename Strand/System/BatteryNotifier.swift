@@ -149,8 +149,8 @@ enum BatteryNotifier {
         d.set(result.newFullAlerted, forKey: fullAlertedKey)
         if result.fireLow {
             post(identifier: "battery-low",
-                 title: String(localized: "Low battery"),
-                 body: String(localized: "Recharge your WHOOP before tonight."))
+                 title: String(localized: "Put your WHOOP on charge"),
+                 body: String(localized: "It's down to \(pct)%. Charge it now so it lasts the night."))
         }
         if result.fireFull {
             post(identifier: "battery-full",
